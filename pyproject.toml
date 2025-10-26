@@ -34,7 +34,7 @@ write_to = "src/python/_version.py"
 local_scheme = "no-local-version"
 
 [tool.cibuildwheel]
-build = "cp39-* cp310-* cp311-* cp312-* cp313-*"
+build = "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
 skip = ["cp*-win32", "cp*-manylinux_i686", "pp*"]
 test-requires = ["numpy", "pytest"]
 test-command = [
@@ -50,25 +50,6 @@ KVXOPT_BUILD_OSQP = "1"
 KVXOPT_BUILD_DSDP = "0"
 KVXOPT_BLAS_LIB = "openblas"
 KVXOPT_LAPACK_LIB = "openblas"
-
-# [tool.cibuildwheel.windows.environment]
-# KVXOPT_BUILD_GSL = "0"
-# KVXOPT_BUILD_FFTW = "0"
-# KVXOPT_BUILD_GLPK = "0"
-# KVXOPT_BUILD_OSQP = "0"
-# KVXOPT_BUILD_DSDP = "0"
-
-
-# [tool.cibuildwheel.macos.environment]
-# KVXOPT_BUILD_GSL = "1"
-# KVXOPT_BUILD_FFTW = "1"
-# KVXOPT_BUILD_GLPK = "1"
-# KVXOPT_BUILD_OSQP = "1"
-# KVXOPT_BUILD_DSDP = "0"
-# KVXOPT_BLAS_LIB = "openblas"
-# KVXOPT_LAPACK_LIB = "openblas"
-# KVXOPT_SUITESPARSE_LIB_DIR = "$(brew --prefix suite-sparse)/lib"
-
 
 [tool.cibuildwheel.linux.environment]
 KVXOPT_BUILD_GSL = "1"
