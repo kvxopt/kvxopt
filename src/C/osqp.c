@@ -19,9 +19,11 @@
 
 #include "osqp.h"
 
-#include "cs.h"
 #include "kvxopt.h"
 #include "misc.h"
+
+#include <stdlib.h>
+#include <string.h>
 
 #define xstr(s) str(s)
 #define str(s) #s
@@ -52,53 +54,56 @@ PyDoc_STRVAR(osqp__doc__, "Interface to OSQP LP and QP solver");
 
 static PyObject *osqp_module;
 
-void print_csc_matrix2(csc *M, const char *name) {
-    c_int j, i, row_start, row_stop;
-    c_int k = 0;
-
-    // Print name
-    c_print("%s :\n", name);
-
+/* Convert a CSC matrix to upper triangular form */
+OSQPCscMatrix* csc_to_triu(OSQPCscMatrix* M) {
+    OSQPInt i, j, ptr, nnz_triu = 0;
+    OSQPFloat *x_triu;
+    OSQPInt *i_triu, *p_triu;
+    OSQPCscMatrix *M_triu;
+    
+    if (!M) return NULL;
+    
+    /* First pass: count number of upper triangular elements */
     for (j = 0; j < M->n; j++) {
-        row_start = M->p[j];
-        row_stop = M->p[j + 1];
-
-        if (row_start == row_stop)
-            continue;
-        else {
-            for (i = row_start; i < row_stop; i++) {
-                c_print("\t[%3u,%3u] = % .3f\n", (int)M->i[i], (int)j,
-                        M->x[k++]);
+        for (ptr = M->p[j]; ptr < M->p[j + 1]; ptr++) {
+            i = M->i[ptr];
+            if (i <= j) {  /* Upper triangular: row <= col */
+                nnz_triu++;
             }
         }
     }
-}
-
-void print_dns_matrix2(c_float *M, c_int m, c_int n, const char *name) {
-    c_int i, j;
-
-    c_print("%s : \n\t", name);
-
-    for (i = 0; i < m; i++) {      // Cycle over rows
-        for (j = 0; j < n; j++) {  // Cycle over columns
-            if (j < n - 1)
-                // c_print("% 14.12e,  ", M[j*m+i]);
-                c_print("% .3f,  ", M[j * m + i]);
-
-            else
-                // c_print("% 14.12e;  ", M[j*m+i]);
-                c_print("% .3f;  ", M[j * m + i]);
-        }
-
-        if (i < m - 1) {
-            c_print("\n\t");
+    
+    /* Allocate arrays for upper triangular matrix */
+    x_triu = (OSQPFloat *)malloc(nnz_triu * sizeof(OSQPFloat));
+    i_triu = (OSQPInt *)malloc(nnz_triu * sizeof(OSQPInt));
+    p_triu = (OSQPInt *)malloc((M->n + 1) * sizeof(OSQPInt));
+    
+    if (!x_triu || !i_triu || !p_triu) {
+        if (x_triu) free(x_triu);
+        if (i_triu) free(i_triu);
+        if (p_triu) free(p_triu);
+        return NULL;
+    }
+    
+    /* Second pass: copy upper triangular elements */
+    nnz_triu = 0;
+    for (j = 0; j < M->n; j++) {
+        p_triu[j] = nnz_triu;
+        for (ptr = M->p[j]; ptr < M->p[j + 1]; ptr++) {
+            i = M->i[ptr];
+            if (i <= j) {  /* Upper triangular: row <= col */
+                x_triu[nnz_triu] = M->x[ptr];
+                i_triu[nnz_triu] = i;
+                nnz_triu++;
+            }
         }
     }
-    c_print("\n");
-}
-
-void print_vec2(c_float *v, c_int n, const char *name) {
-    print_dns_matrix2(v, 1, n, name);
+    p_triu[M->n] = nnz_triu;
+    
+    /* Create new CSC matrix */
+    M_triu = OSQPCscMatrix_new(M->m, M->n, nnz_triu, x_triu, i_triu, p_triu);
+    
+    return M_triu;
 }
 
 static PyObject *resize_problem(spmatrix *G, matrix *h, spmatrix *A,
@@ -203,17 +208,14 @@ static int solve_problem(spmatrix *P, matrix *q, spmatrix *A, matrix *l,
     char msg[100];
     int error = 0;
 
-    OSQPWorkspace *work = NULL;
+    OSQPSolver *solver = NULL;
     OSQPSettings *settings = NULL;
-    OSQPData *data = NULL;
-    csc *Porig;
+    OSQPCscMatrix *Porig = NULL;
+    OSQPCscMatrix *Pmat = NULL;
+    OSQPCscMatrix *Amat = NULL;
 
-    if (!(settings = (OSQPSettings *)c_malloc(sizeof(OSQPSettings)))) {
-        error = 100;
-        goto CLEAN;
-    }
-    if (!(data = (OSQPData *)c_malloc(sizeof(OSQPData)))) {
-        c_free(settings);
+
+    if (!(settings = (OSQPSettings *)malloc(sizeof(OSQPSettings)))) {
         error = 100;
         goto CLEAN;
     }
@@ -225,8 +227,7 @@ static int solve_problem(spmatrix *P, matrix *q, spmatrix *A, matrix *l,
     if (!(opts && PyDict_Check(opts)))
         opts = PyObject_GetAttrString(osqp_module, "options");
     if (!opts || !PyDict_Check(opts)) {
-        c_free(data);
-        c_free(settings);
+        free(settings);
         PyErr_SetString(PyExc_AttributeError,
                         "missing osqp.options dictionary");
         error = 1;
@@ -253,12 +254,12 @@ static int solve_problem(spmatrix *P, matrix *q, spmatrix *A, matrix *l,
             else IF_PARSE_FLOAT_OPT(alpha, key, value)
             else IF_PARSE_FLOAT_OPT(delta, key, value)
             else IF_PARSE_INT_OPT(linsys_solver, key, value)
-            else IF_PARSE_INT_OPT(polish, key, value)
+            else IF_PARSE_INT_OPT(polishing, key, value)
             else IF_PARSE_INT_OPT(polish_refine_iter, key, value)
             else IF_PARSE_INT_OPT(verbose, key, value)
             else IF_PARSE_INT_OPT(scaled_termination, key, value)
             else IF_PARSE_INT_OPT(check_termination, key, value)
-            else IF_PARSE_INT_OPT(warm_start, key, value)
+            else IF_PARSE_INT_OPT(warm_starting, key, value)
             else IF_PARSE_FLOAT_OPT(time_limit, key, value)
             else{
                 strcpy(msg, "Invalid parameter name: ");
@@ -268,58 +269,58 @@ static int solve_problem(spmatrix *P, matrix *q, spmatrix *A, matrix *l,
         }
     }
 
-    data->m = SP_NROWS(A);
-    data->n = SP_NCOLS(A);
-    data->A = csc_matrix(data->m, data->n, SP_NNZ(A), (c_float *)SP_VALD(A),
-                         (c_int *)SP_ROW(A), (c_int *)SP_COL(A));
-    data->l = MAT_BUFD(l);
-    data->u = MAT_BUFD(u);
+    // Create CSC matrices for OSQP
+    Amat = OSQPCscMatrix_new(SP_NROWS(A), SP_NCOLS(A), SP_NNZ(A), 
+                             (OSQPFloat *)SP_VALD(A), (OSQPInt *)SP_ROW(A), 
+                             (OSQPInt *)SP_COL(A));
 
     if (P) {
-        Porig = csc_matrix(data->n, data->n, SP_NNZ(P), (c_float *)SP_VALD(P),
-                           (c_int *)SP_ROW(P), (c_int *)SP_COL(P));
-        data->P = csc_to_triu(Porig);
+        Porig = OSQPCscMatrix_new(SP_NROWS(P), SP_NCOLS(P), SP_NNZ(P), 
+                                  (OSQPFloat *)SP_VALD(P), (OSQPInt *)SP_ROW(P), 
+                                  (OSQPInt *)SP_COL(P));
+        Pmat = csc_to_triu(Porig);
         // print_csc_matrix2(Porig, "Porig");
-        // print_csc_matrix2(data->P, "P");
+        // print_csc_matrix2(Pmat, "P");
     } else {
-        data->P = csc_spalloc(data->n, data->n, 0, 0, 0);
-        for (i = 0; i < data->n + 1; i++) data->P->p[i] = 0;
+        Pmat = OSQPCscMatrix_new(SP_NCOLS(A), SP_NCOLS(A), 0, NULL, NULL, NULL);
     }
-    
 
-    data->q = MAT_BUFD(q);
+    // print_csc_matrix2(Pmat, "P");
+    // print_vec2((OSQPFloat *)MAT_BUFD(q), SP_NCOLS(A), "q");
 
-    // print_csc_matrix2(data->P, "P");
-    // print_vec2(data->q, data->n, "q");
-
-    // print_csc_matrix2(data->A, "A");
-    // print_vec2(data->l, data->m, "l");
-    // print_vec2(data->u, data->m, "u");
+    // print_csc_matrix2(Amat, "A");
+    // print_vec2((OSQPFloat *)MAT_BUFD(l), SP_NROWS(A), "l");
+    // print_vec2((OSQPFloat *)MAT_BUFD(u), SP_NROWS(A), "u");
 
     // Setup workspace
     // Release the GIL
     Py_BEGIN_ALLOW_THREADS;
-    if ((exitflag = osqp_setup(&work, data, settings))) {
+    exitflag = osqp_setup(&solver, Pmat, (OSQPFloat *)MAT_BUFD(q), Amat, 
+                          (OSQPFloat *)MAT_BUFD(l), (OSQPFloat *)MAT_BUFD(u), 
+                          SP_NROWS(A), SP_NCOLS(A), settings);
+    Py_END_ALLOW_THREADS;
+    
+    if (exitflag) {
         error = exitflag;
         goto CLEAN;
     }
-    Py_END_ALLOW_THREADS;
-    // if (exitflag)
 
     // Solve Problem
     Py_BEGIN_ALLOW_THREADS;
-    if ((exitflag = osqp_solve(work))) {
+    exitflag = osqp_solve(solver);
+    Py_END_ALLOW_THREADS;
+
+    if (exitflag) {
         error = exitflag;
         goto CLEAN;
     }
-    Py_END_ALLOW_THREADS;
 
-    csc_spfree(data->P);
-    c_free(data->A);
-    if (P) free(Porig);
+    OSQPCscMatrix_free(Pmat);
+    OSQPCscMatrix_free(Amat);
+    if (P) OSQPCscMatrix_free(Porig);
 
-    x = Matrix_New(data->n, 1, DOUBLE);
-    z = Matrix_New(data->m, 1, DOUBLE);
+    x = Matrix_New(SP_NCOLS(A), 1, DOUBLE);
+    z = Matrix_New(SP_NROWS(A), 1, DOUBLE);
     if (!x || !z) {
         Py_XDECREF(x);
         Py_XDECREF(z);
@@ -328,24 +329,24 @@ static int solve_problem(spmatrix *P, matrix *q, spmatrix *A, matrix *l,
         goto CLEAN;
     }
 
-    if (work->info->status_val == OSQP_SOLVED ||
-        work->info->status_val == OSQP_SOLVED_INACCURATE) {
+    if (solver->info->status_val == OSQP_SOLVED ||
+        solver->info->status_val == OSQP_SOLVED_INACCURATE) {
         /* Return primal solution and Lagrange multiplier associated to 𝑙<=𝐴𝑥<=𝑢
          */
-        memcpy(MAT_BUFD(x), (double *)work->solution->x,
-               data->n * sizeof(double));
-        memcpy(MAT_BUFD(z), (double *)work->solution->y,
-               data->m * sizeof(double));
+        memcpy(MAT_BUFD(x), (double *)solver->solution->x,
+               SP_NCOLS(A) * sizeof(double));
+        memcpy(MAT_BUFD(z), (double *)solver->solution->y,
+               SP_NROWS(A) * sizeof(double));
 
-    } else if (work->info->status_val == OSQP_PRIMAL_INFEASIBLE ||
-               work->info->status_val == OSQP_PRIMAL_INFEASIBLE_INACCURATE) {
+    } else if (solver->info->status_val == OSQP_PRIMAL_INFEASIBLE ||
+               solver->info->status_val == OSQP_PRIMAL_INFEASIBLE_INACCURATE) {
         /* Return the primal infeasibility certificate */
-        memcpy(MAT_BUFD(z), (double *)work->delta_y, data->m * sizeof(double));
+        memcpy(MAT_BUFD(z), (double *)solver->solution->prim_inf_cert, SP_NROWS(A) * sizeof(double));
 
-    } else if (work->info->status_val == OSQP_DUAL_INFEASIBLE ||
-               work->info->status_val == OSQP_DUAL_INFEASIBLE_INACCURATE) {
+    } else if (solver->info->status_val == OSQP_DUAL_INFEASIBLE ||
+               solver->info->status_val == OSQP_DUAL_INFEASIBLE_INACCURATE) {
         /* Return the dual infeasibility certificate */
-        memcpy(MAT_BUFD(x), (double *)work->delta_x, data->n * sizeof(double));
+        memcpy(MAT_BUFD(x), (double *)solver->solution->dual_inf_cert, SP_NCOLS(A) * sizeof(double));
     }
 
     if (!(*res = PyTuple_New(3))) {
@@ -354,15 +355,14 @@ static int solve_problem(spmatrix *P, matrix *q, spmatrix *A, matrix *l,
     }
 
     PyTuple_SET_ITEM(*res, 0,
-                     (PyObject *)PYSTRING_FROMSTRING(work->info->status));
+                     (PyObject *)PYSTRING_FROMSTRING(solver->info->status));
     PyTuple_SET_ITEM(*res, 1, (PyObject *)x);
     PyTuple_SET_ITEM(*res, 2, (PyObject *)z);
 
 
 CLEAN:
-    c_free(data);
-    c_free(settings);
-    osqp_cleanup(work);
+    free(settings);
+    if (solver) osqp_cleanup(solver);
 
     return error;
 }
