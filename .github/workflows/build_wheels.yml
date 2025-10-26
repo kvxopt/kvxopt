@@ -251,7 +251,9 @@ jobs:
       always() &&
       (needs.build_wheels.result == 'success') &&
       (needs.build_sdist.result == 'success') &&
-      (needs.config.outputs.upload_official_pypi == '1')
+      (needs.config.outputs.upload_official_pypi == '1') &&
+      (github.event_name == 'push') &&
+      (github.ref == 'refs/heads/master')
 
     environment:
       name: pypi
