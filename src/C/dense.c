@@ -159,6 +159,12 @@ matrix * Matrix_New(int nrows, int ncols, int id)
   }
 
   a->id = id; a->nrows = nrows; a->ncols = ncols;
+  /* Python 3.14 buffer protocol compatibility: init for memoryview support */
+  a->ob_exports = 0;
+  a->shape[0] = nrows;
+  a->shape[1] = ncols;
+  a->strides[0] = ncols * E_SIZE[a->id];
+  a->strides[1] = E_SIZE[a->id];
   if ((a->buffer = calloc(nrows*ncols,E_SIZE[id])))
     return a;
   else if (nrows*ncols == 0) 
@@ -202,16 +208,21 @@ matrix *Matrix_NewFromPyBuffer(PyObject *obj, int id, int *ndim)
   int flags = PyBUF_FORMAT | PyBUF_STRIDES;  
 
   Py_buffer *view = (Py_buffer *)malloc(sizeof(Py_buffer));
+  if (!view) {
+    PyErr_NoMemory();
+    return NULL;
+  }
   if (PyObject_GetBuffer(obj, view, flags)) {
     free(view);
     PY_ERR_TYPE("buffer not supported"); 
   }
 
   if (view->ndim != 1 && view->ndim != 2) {
+    PyBuffer_Release(view);
     free(view);
     PY_ERR_TYPE("imported array must have 1 or 2 dimensions");
   }
-  
+
   /* check buffer format */
 #ifdef _WIN64
   int int_to_int_t = !strcmp(view->format, FMT_STR[3]) || !strcmp(view->format, FMT_STR[4]);  
