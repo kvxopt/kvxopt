@@ -125,6 +125,41 @@ class TestOSQP(unittest.TestCase):
         self.assertAlmostEqualLists(list(x1), x, 2)
         self.assertAlmostEqualLists(list(y1), y, 2)
 
+    def test_osqp_direct_call(self):
+        """Test calling osqp.qp directly (regression test for memory issues)"""
+        from kvxopt import osqp, matrix, sparse
+        
+        # Simple LP problem
+        c = matrix([-4., -5.])
+        G = sparse(matrix([[2., 1., -1., 0.], [1., 2., 0., -1.]]))
+        h = matrix([3., 3., 0., 0.])
+        
+        # Call osqp.qp directly
+        result = osqp.qp(c, G, h, options=self.opts)
+        
+        # Check that it doesn't segfault and returns valid results
+        self.assertEqual(len(result), 3)  # (status, x, z)
+        self.assertEqual(result[0], 'solved')
+        self.assertEqual(len(result[1]), 2)  # x vector
+        self.assertEqual(len(result[2]), 4)  # z vector
+
+    def test_osqp_via_solvers_lp(self):
+        """Test OSQP through solvers.lp interface (regression test)"""
+        from kvxopt import solvers, matrix, sparse
+        
+        # Simple LP problem
+        c = matrix([-4., -5.])
+        G = sparse(matrix([[2., 1., -1., 0.], [1., 2., 0., -1.]]))
+        h = matrix([3., 3., 0., 0.])
+        
+        # Call through solvers.lp
+        sol = solvers.lp(c, G, h, solver='osqp', options={'osqp': self.opts})
+        
+        # Check that it doesn't segfault and returns valid results
+        self.assertEqual(sol['status'], 'optimal')
+        self.assertIsNotNone(sol['x'])
+        self.assertEqual(len(sol['x']), 2)
+
 
 
 if __name__ == '__main__':

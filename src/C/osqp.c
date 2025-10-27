@@ -100,10 +100,38 @@ OSQPCscMatrix* csc_to_triu(OSQPCscMatrix* M) {
     }
     p_triu[M->n] = nnz_triu;
     
-    /* Create new CSC matrix */
-    M_triu = OSQPCscMatrix_new(M->m, M->n, nnz_triu, x_triu, i_triu, p_triu);
+    /* Create new CSC matrix - manually allocate and set owned=1 */
+    /* since we allocated x_triu, i_triu, p_triu and want OSQP to free them */
+    M_triu = (OSQPCscMatrix *)malloc(sizeof(OSQPCscMatrix));
+    if (!M_triu) {
+        free(x_triu);
+        free(i_triu);
+        free(p_triu);
+        return NULL;
+    }
+    M_triu->m = M->m;
+    M_triu->n = M->n;
+    M_triu->nzmax = nnz_triu;
+    M_triu->nz = -1;
+    M_triu->x = x_triu;
+    M_triu->i = i_triu;
+    M_triu->p = p_triu;
+    M_triu->owned = 1;  // OSQP should free these arrays
     
     return M_triu;
+}
+
+/* Free an OSQPCscMatrix respecting the owned flag */
+static void free_csc_matrix(OSQPCscMatrix *mat) {
+    if (!mat) return;
+    
+    if (mat->owned) {
+        /* Only free arrays if we own them */
+        if (mat->x) free(mat->x);
+        if (mat->i) free(mat->i);
+        if (mat->p) free(mat->p);
+    }
+    free(mat);
 }
 
 static PyObject *resize_problem(spmatrix *G, matrix *h, spmatrix *A,
@@ -213,6 +241,8 @@ static int solve_problem(spmatrix *P, matrix *q, spmatrix *A, matrix *l,
     OSQPCscMatrix *Porig = NULL;
     OSQPCscMatrix *Pmat = NULL;
     OSQPCscMatrix *Amat = NULL;
+    OSQPInt *A_rowind = NULL, *A_colptr = NULL;
+    OSQPInt *P_rowind = NULL, *P_colptr = NULL;
 
 
     if (!(settings = (OSQPSettings *)malloc(sizeof(OSQPSettings)))) {
@@ -270,19 +300,99 @@ static int solve_problem(spmatrix *P, matrix *q, spmatrix *A, matrix *l,
     }
 
     // Create CSC matrices for OSQP
-    Amat = OSQPCscMatrix_new(SP_NROWS(A), SP_NCOLS(A), SP_NNZ(A), 
-                             (OSQPFloat *)SP_VALD(A), (OSQPInt *)SP_ROW(A), 
-                             (OSQPInt *)SP_COL(A));
+    // Need to convert int_t (Py_ssize_t) to OSQPInt and manually manage memory
+    // CRITICAL: Set owned=0 so OSQP doesn't try to free kvxopt's memory
+    
+    // Convert A matrix indices
+    A_rowind = (OSQPInt *)malloc(SP_NNZ(A) * sizeof(OSQPInt));
+    A_colptr = (OSQPInt *)malloc((SP_NCOLS(A) + 1) * sizeof(OSQPInt));
+    if (!A_rowind || !A_colptr) {
+        error = 100;
+        goto CLEAN;
+    }
+    for (i = 0; i < SP_NNZ(A); i++) {
+        A_rowind[i] = (OSQPInt)SP_ROW(A)[i];
+    }
+    for (i = 0; i <= SP_NCOLS(A); i++) {
+        A_colptr[i] = (OSQPInt)SP_COL(A)[i];
+    }
+    
+    // Manually create OSQPCscMatrix and set owned=0
+    // This prevents OSQP from freeing memory we manage
+    Amat = (OSQPCscMatrix *)malloc(sizeof(OSQPCscMatrix));
+    if (!Amat) {
+        error = 100;
+        goto CLEAN;
+    }
+    Amat->m = SP_NROWS(A);
+    Amat->n = SP_NCOLS(A);
+    Amat->nzmax = SP_NNZ(A);
+    Amat->nz = -1;  // -1 indicates CSC format (not triplet)
+    Amat->x = (OSQPFloat *)SP_VALD(A);
+    Amat->i = A_rowind;
+    Amat->p = A_colptr;
+    Amat->owned = 0;  // CRITICAL: We manage the memory, not OSQP
 
     if (P) {
-        Porig = OSQPCscMatrix_new(SP_NROWS(P), SP_NCOLS(P), SP_NNZ(P), 
-                                  (OSQPFloat *)SP_VALD(P), (OSQPInt *)SP_ROW(P), 
-                                  (OSQPInt *)SP_COL(P));
+        // Convert P matrix indices
+        P_rowind = (OSQPInt *)malloc(SP_NNZ(P) * sizeof(OSQPInt));
+        P_colptr = (OSQPInt *)malloc((SP_NCOLS(P) + 1) * sizeof(OSQPInt));
+        if (!P_rowind || !P_colptr) {
+            error = 100;
+            goto CLEAN;
+        }
+        for (i = 0; i < SP_NNZ(P); i++) {
+            P_rowind[i] = (OSQPInt)SP_ROW(P)[i];
+        }
+        for (i = 0; i <= SP_NCOLS(P); i++) {
+            P_colptr[i] = (OSQPInt)SP_COL(P)[i];
+        }
+        
+        // Manually create Porig matrix with owned=0
+        Porig = (OSQPCscMatrix *)malloc(sizeof(OSQPCscMatrix));
+        if (!Porig) {
+            error = 100;
+            goto CLEAN;
+        }
+        Porig->m = SP_NROWS(P);
+        Porig->n = SP_NCOLS(P);
+        Porig->nzmax = SP_NNZ(P);
+        Porig->nz = -1;
+        Porig->x = (OSQPFloat *)SP_VALD(P);
+        Porig->i = P_rowind;
+        Porig->p = P_colptr;
+        Porig->owned = 0;  // We manage the memory
+        
+        // Convert to upper triangular form
+        // Note: csc_to_triu allocates NEW memory with owned=1, which is correct
         Pmat = csc_to_triu(Porig);
+        if (!Pmat) {
+            error = 100;
+            goto CLEAN;
+        }
         // print_csc_matrix2(Porig, "Porig");
         // print_csc_matrix2(Pmat, "P");
     } else {
-        Pmat = OSQPCscMatrix_new(SP_NCOLS(A), SP_NCOLS(A), 0, NULL, NULL, NULL);
+        // Empty P matrix (LP problem)
+        Pmat = (OSQPCscMatrix *)malloc(sizeof(OSQPCscMatrix));
+        if (!Pmat) {
+            error = 100;
+            goto CLEAN;
+        }
+        Pmat->m = SP_NCOLS(A);
+        Pmat->n = SP_NCOLS(A);
+        Pmat->nzmax = 0;
+        Pmat->nz = -1;
+        Pmat->x = NULL;
+        Pmat->i = NULL;
+        Pmat->p = (OSQPInt *)calloc(SP_NCOLS(A) + 1, sizeof(OSQPInt));
+        if (!Pmat->p) {
+            free(Pmat);
+            Pmat = NULL;
+            error = 100;
+            goto CLEAN;
+        }
+        Pmat->owned = 1;  // We allocated p, so OSQP should free it
     }
 
     // print_csc_matrix2(Pmat, "P");
@@ -315,9 +425,15 @@ static int solve_problem(spmatrix *P, matrix *q, spmatrix *A, matrix *l,
         goto CLEAN;
     }
 
-    OSQPCscMatrix_free(Pmat);
-    OSQPCscMatrix_free(Amat);
-    if (P) OSQPCscMatrix_free(Porig);
+    /* Free the CSC matrices now that OSQP has copied the data */
+    free_csc_matrix(Pmat);
+    Pmat = NULL;
+    free_csc_matrix(Amat);
+    Amat = NULL;
+    if (Porig) {
+        free_csc_matrix(Porig);
+        Porig = NULL;
+    }
 
     x = Matrix_New(SP_NCOLS(A), 1, DOUBLE);
     z = Matrix_New(SP_NROWS(A), 1, DOUBLE);
@@ -363,6 +479,17 @@ static int solve_problem(spmatrix *P, matrix *q, spmatrix *A, matrix *l,
 CLEAN:
     free(settings);
     if (solver) osqp_cleanup(solver);
+    
+    /* Free our manually allocated CSC matrices if they still exist */
+    if (Pmat) free_csc_matrix(Pmat);
+    if (Amat) free_csc_matrix(Amat);
+    if (Porig) free_csc_matrix(Porig);
+    
+    /* Free the index arrays we allocated for type conversion */
+    if (A_rowind) free(A_rowind);
+    if (A_colptr) free(A_colptr);
+    if (P_rowind) free(P_rowind);
+    if (P_colptr) free(P_colptr);
 
     return error;
 }
