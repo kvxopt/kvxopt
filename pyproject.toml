@@ -68,3 +68,23 @@ KVXOPT_OSQP_INC_DIR = "/usr/local/include/osqp/"
 KVXOPT_SUITESPARSE_LIB_DIR = "/usr/lib64/:/usr/lib/x86_64-linux-gnu/"
 KVXOPT_SUITESPARSE_INC_DIR = "/usr/include/suitesparse/"
 
+[tool.pyrefly]
+project-includes = [
+    "src/python/**/*.pyi",
+    "tests/types/**/*.py",
+]
+project-excludes = [
+    ".git/**",
+    ".venv/**",
+    ".venv-*/*",
+    "build/**",
+    "doc/**",
+    "examples/**",
+    "src/python/**/*.so",
+    "src/python/__pycache__/**",
+    "tests/**/*.mtx",
+    "tests/**/*.mps",
+    "wheelhouse/**",
+]
+untyped-def-behavior = "check-and-infer-return-type"
+

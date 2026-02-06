@@ -16,3 +16,6 @@ gurobi_kvxopt.log
 *.log
 *.lp
 *.supp
+
+# Auto-generated version file
+src/python/_version.py
