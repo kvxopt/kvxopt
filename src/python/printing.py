@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # Copyright 2012-2023 M. Andersen and L. Vandenberghe.
 # Copyright 2010-2011 L. Vandenberghe.
 # Copyright 2004-2009 J. Dahl and L. Vandenberghe.
@@ -17,12 +19,14 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-options = {'dformat' : '% .2e',
-           'iformat' : '% i',
-           'width' : 7,
-           'height' : -1}
+from typing import Any
 
-def matrix_str_default(X):
+options: dict[str, Any] = {'dformat' : '% .2e',
+                           'iformat' : '% i',
+                           'width' : 7,
+                           'height' : -1}
+
+def matrix_str_default(X: Any) -> str:
 
     from sys import maxsize
     from kvxopt.printing import options
@@ -77,10 +81,10 @@ def matrix_str_default(X):
 
     return s
 
-def matrix_repr_default(X):
+def matrix_repr_default(X: Any) -> str:
     return "<%ix%i matrix, tc='%c'>" %(X.size[0],X.size[1],X.typecode)
 
-def spmatrix_str_default(X):
+def spmatrix_str_default(X: Any) -> str:
 
     from sys import maxsize
     from kvxopt.printing import options
@@ -144,7 +148,7 @@ def spmatrix_str_default(X):
     return s
 
 
-def spmatrix_str_triplet(X):
+def spmatrix_str_triplet(X: Any) -> str:
 
     from kvxopt.printing import options
 
@@ -186,6 +190,6 @@ def spmatrix_str_triplet(X):
                 
     return s
 
-def spmatrix_repr_default(X):
+def spmatrix_repr_default(X: Any) -> str:
     return "<%ix%i sparse matrix, tc='%c', nnz=%i>" \
         %(X.size[0],X.size[1],X.typecode,len(X.V))

@@ -478,7 +478,7 @@ language.
     ext_package = "kvxopt",
     ext_modules = extmods,
     package_dir = {"kvxopt": "src/python"},
-    package_data = {'': ['.libs/*.dll', '*LICENSE']},
+    package_data = {'kvxopt': ['.libs/*.dll', '*LICENSE', '*.pyi', 'py.typed']},
     packages = ["kvxopt"],
     python_requires=PYTHON_REQUIRES,
     install_requires = INSTALL_REQUIRES,

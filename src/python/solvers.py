@@ -12,6 +12,7 @@ sdp:      solves semidefinite programs.
 socp:     solves second-order cone programs.
 options:  dictionary with customizable algorithm parameters.
 """
+from __future__ import annotations
 
 # Copyright 2012-2023 M. Andersen and L. Vandenberghe.
 # Copyright 2010-2011 L. Vandenberghe.
@@ -35,7 +36,9 @@ options:  dictionary with customizable algorithm parameters.
 import kvxopt
 from kvxopt.cvxprog import cp, cpl, gp 
 from kvxopt.coneprog import conelp, lp, sdp, socp, coneqp, qp
-options = {}
+from typing import Any
+
+options: dict[str, Any] = {}
 kvxopt.cvxprog.options = options
 kvxopt.coneprog.options = options
 __all__ = ['conelp', 'coneqp', 'lp', 'socp', 'sdp', 'qp', 'cp', 'cpl', 'gp']
