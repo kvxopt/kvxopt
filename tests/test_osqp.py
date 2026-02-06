@@ -138,10 +138,11 @@ class TestOSQP(unittest.TestCase):
         result = osqp.qp(c, G, h, options=self.opts)
         
         # Check that it doesn't segfault and returns valid results
-        self.assertEqual(len(result), 3)  # (status, x, z)
+        self.assertEqual(len(result), 4)  # (status, x, z, y)
         self.assertEqual(result[0], 'solved')
         self.assertEqual(len(result[1]), 2)  # x vector
         self.assertEqual(len(result[2]), 4)  # z vector
+        self.assertEqual(len(result[3]), 0)  # y vector (no equality constraints)
 
     def test_osqp_via_solvers_lp(self):
         """Test OSQP through solvers.lp interface (regression test)"""
