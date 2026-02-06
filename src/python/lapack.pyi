@@ -3,7 +3,7 @@ from typing import TypeAlias
 from ._types import Number
 from .base import matrix, spmatrix
 
-LapackArg: TypeAlias = Number | matrix | spmatrix | str | int
+LapackArg: TypeAlias = Number | matrix | spmatrix | str
 LapackRet: TypeAlias = None | int | float | complex | matrix | tuple[matrix, ...] | tuple[int, ...]
 
 

@@ -8,6 +8,7 @@ SolverValue: TypeAlias = (
     | matrix
     | spmatrix
     | list[matrix]
+    | list[spmatrix]
     | dict[str, OptionValue]
     | float
     | int

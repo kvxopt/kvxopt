@@ -1,6 +1,7 @@
 """
 Comprehensive tests for LAPACK module
 """
+import math
 import unittest
 from kvxopt import matrix, lapack
 
@@ -102,7 +103,7 @@ class TestLAPACK(unittest.TestCase):
 
     def test_geqrf_basic(self):
         """Test QR factorization"""
-        A = matrix([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+        A = matrix([1.0, 3.0, 5.0, 2.0, 4.0, 6.0], (3, 2))
         tau = matrix(0.0, (2, 1))
         
         lapack.geqrf(A, tau)
@@ -112,7 +113,7 @@ class TestLAPACK(unittest.TestCase):
 
     def test_orgqr(self):
         """Test generation of Q from QR factorization"""
-        A = matrix([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+        A = matrix([1.0, 3.0, 5.0, 2.0, 4.0, 6.0], (3, 2))
         tau = matrix(0.0, (2, 1))
         
         lapack.geqrf(A, tau)
@@ -121,7 +122,7 @@ class TestLAPACK(unittest.TestCase):
         # Q should be orthogonal: Q'*Q = I (approximately)
         from kvxopt import blas
         Q = A
-        QTQ = matrix(0.0, (3, 3))  # Corrected: must be mxm, not kxk
+        QTQ = matrix(0.0, (2, 2))
         blas.gemm(Q, Q, QTQ, transA='T')
         
         # Check first k diagonal elements close to 1
@@ -139,6 +140,8 @@ class TestLAPACK(unittest.TestCase):
         # Check eigenvalues are real
         self.assertTrue(len(w) == 2)
         self.assertTrue(w[0] <= w[1])  # Eigenvalues in ascending order
+        self.assertAlmostEqual(w[0], (7.0 - math.sqrt(17.0)) / 2.0, places=6)
+        self.assertAlmostEqual(w[1], (7.0 + math.sqrt(17.0)) / 2.0, places=6)
 
     def test_syev_with_vectors(self):
         """Test eigenvalue decomposition with eigenvectors"""
@@ -149,12 +152,14 @@ class TestLAPACK(unittest.TestCase):
         
         # Check eigenvalues
         self.assertTrue(len(w) == 2)
+        self.assertAlmostEqual(w[0], (7.0 - math.sqrt(17.0)) / 2.0, places=6)
+        self.assertAlmostEqual(w[1], (7.0 + math.sqrt(17.0)) / 2.0, places=6)
         # A now contains eigenvectors
         self.assertTrue(A.size == (2, 2))
 
     def test_gesvd_basic(self):
         """Test singular value decomposition"""
-        A = matrix([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+        A = matrix([1.0, 3.0, 5.0, 2.0, 4.0, 6.0], (3, 2))
         s = matrix(0.0, (2, 1))
         
         # Just compute singular values (U and Vt setup is tricky)
@@ -178,7 +183,7 @@ class TestLAPACK(unittest.TestCase):
     def test_gels_basic(self):
         """Test least squares solution"""
         # Overdetermined system
-        A = matrix([[1.0, 1.0], [2.0, 1.0], [3.0, 1.0]])
+        A = matrix([1.0, 2.0, 3.0, 1.0, 1.0, 1.0], (3, 2))
         B = matrix([2.0, 3.0, 4.0])
         
         lapack.gels(+A, B)
@@ -329,11 +334,6 @@ class TestLAPACK(unittest.TestCase):
 
 class TestLAPACKEdgeCases(unittest.TestCase):
     """Test edge cases and boundary conditions"""
-
-    def test_empty_matrix(self):
-        """Test behavior with empty matrices"""
-        # This may raise an error or handle gracefully
-        pass
 
     def test_1x1_matrix(self):
         """Test 1x1 matrices"""

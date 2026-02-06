@@ -11,7 +11,10 @@ OSQPStatus = Literal[
     "dual infeasible",
     "dual infeasible inaccurate",
     "maximum iterations reached",
-    "unknown",
+    "run time limit reached",
+    "problem non convex",
+    "interrupted by user",
+    "unsolved",
 ]
 
 options: dict[str, OptionValue]

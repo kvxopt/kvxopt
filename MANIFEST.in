@@ -2,8 +2,6 @@ include README.md
 include LICENSE
 include INSTALL
 include src/python/_version.py
-include src/python/py.typed
-recursive-include src/python *.pyi
 recursive-include doc *
 recursive-include examples *
 recursive-include src *

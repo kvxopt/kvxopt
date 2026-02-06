@@ -3,7 +3,7 @@ from typing import TypeAlias
 from ._types import Number
 from .base import matrix, spmatrix
 
-BLASArg: TypeAlias = Number | matrix | spmatrix | str | int
+BLASArg: TypeAlias = Number | matrix | spmatrix | str
 
 
 def asum(*args: BLASArg, **kwargs: BLASArg) -> float: ...

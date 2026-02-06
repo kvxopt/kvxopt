@@ -55,7 +55,7 @@ PyDoc_STRVAR(osqp__doc__, "Interface to OSQP LP and QP solver");
 static PyObject *osqp_module;
 
 /* Convert a CSC matrix to upper triangular form */
-OSQPCscMatrix* csc_to_triu(OSQPCscMatrix* M) {
+static OSQPCscMatrix* csc_to_triu(OSQPCscMatrix* M) {
     OSQPInt i, j, ptr, nnz_triu = 0;
     OSQPFloat *x_triu;
     OSQPInt *i_triu, *p_triu;
@@ -74,11 +74,11 @@ OSQPCscMatrix* csc_to_triu(OSQPCscMatrix* M) {
     }
     
     /* Allocate arrays for upper triangular matrix */
-    x_triu = (OSQPFloat *)malloc(nnz_triu * sizeof(OSQPFloat));
-    i_triu = (OSQPInt *)malloc(nnz_triu * sizeof(OSQPInt));
-    p_triu = (OSQPInt *)malloc((M->n + 1) * sizeof(OSQPInt));
-    
-    if (!x_triu || !i_triu || !p_triu) {
+    x_triu = nnz_triu ? (OSQPFloat *)malloc(nnz_triu * sizeof(OSQPFloat)) : NULL;
+    i_triu = nnz_triu ? (OSQPInt *)malloc(nnz_triu * sizeof(OSQPInt)) : NULL;
+    p_triu = (OSQPInt *)calloc((size_t)(M->n + 1), sizeof(OSQPInt));
+
+    if (!p_triu || (nnz_triu && (!x_triu || !i_triu))) {
         if (x_triu) free(x_triu);
         if (i_triu) free(i_triu);
         if (p_triu) free(p_triu);
@@ -101,7 +101,7 @@ OSQPCscMatrix* csc_to_triu(OSQPCscMatrix* M) {
     p_triu[M->n] = nnz_triu;
     
     /* Create new CSC matrix - manually allocate and set owned=1 */
-    /* since we allocated x_triu, i_triu, p_triu and want OSQP to free them */
+    /* so free_csc_matrix will release x_triu, i_triu and p_triu. */
     M_triu = (OSQPCscMatrix *)malloc(sizeof(OSQPCscMatrix));
     if (!M_triu) {
         free(x_triu);
@@ -116,7 +116,7 @@ OSQPCscMatrix* csc_to_triu(OSQPCscMatrix* M) {
     M_triu->x = x_triu;
     M_triu->i = i_triu;
     M_triu->p = p_triu;
-    M_triu->owned = 1;  // OSQP should free these arrays
+    M_triu->owned = 1;
     
     return M_triu;
 }
@@ -284,11 +284,25 @@ static int solve_problem(spmatrix *P, matrix *q, spmatrix *A, matrix *l,
             else IF_PARSE_FLOAT_OPT(alpha, key, value)
             else IF_PARSE_FLOAT_OPT(delta, key, value)
             else IF_PARSE_INT_OPT(linsys_solver, key, value)
+            else if (!PYSTRING_COMPARE(key, "polish")) {
+                if (PYINT_CHECK(value)) {
+                    settings->polishing = PYINT_AS_LONG(value);
+                } else {
+                    PyErr_WarnEx(NULL, "Invalid value for parameter:polish", 1);
+                }
+            }
             else IF_PARSE_INT_OPT(polishing, key, value)
             else IF_PARSE_INT_OPT(polish_refine_iter, key, value)
             else IF_PARSE_INT_OPT(verbose, key, value)
             else IF_PARSE_INT_OPT(scaled_termination, key, value)
             else IF_PARSE_INT_OPT(check_termination, key, value)
+            else if (!PYSTRING_COMPARE(key, "warm_start")) {
+                if (PYINT_CHECK(value)) {
+                    settings->warm_starting = PYINT_AS_LONG(value);
+                } else {
+                    PyErr_WarnEx(NULL, "Invalid value for parameter:warm_start", 1);
+                }
+            }
             else IF_PARSE_INT_OPT(warm_starting, key, value)
             else IF_PARSE_FLOAT_OPT(time_limit, key, value)
             else{
@@ -444,6 +458,8 @@ static int solve_problem(spmatrix *P, matrix *q, spmatrix *A, matrix *l,
         error = 100;
         goto CLEAN;
     }
+    memset(MAT_BUFD(x), 0, SP_NCOLS(A) * sizeof(double));
+    memset(MAT_BUFD(z), 0, SP_NROWS(A) * sizeof(double));
 
     if (solver->info->status_val == OSQP_SOLVED ||
         solver->info->status_val == OSQP_SOLVED_INACCURATE) {
@@ -463,6 +479,16 @@ static int solve_problem(spmatrix *P, matrix *q, spmatrix *A, matrix *l,
                solver->info->status_val == OSQP_DUAL_INFEASIBLE_INACCURATE) {
         /* Return the dual infeasibility certificate */
         memcpy(MAT_BUFD(x), (double *)solver->solution->dual_inf_cert, SP_NCOLS(A) * sizeof(double));
+    } else if (solver->solution) {
+        /* Return best-available iterates for statuses like max-iter/time-limit/non-convex. */
+        if (solver->solution->x) {
+            memcpy(MAT_BUFD(x), (double *)solver->solution->x,
+                   SP_NCOLS(A) * sizeof(double));
+        }
+        if (solver->solution->y) {
+            memcpy(MAT_BUFD(z), (double *)solver->solution->y,
+                   SP_NROWS(A) * sizeof(double));
+        }
     }
 
     if (!(*res = PyTuple_New(3))) {

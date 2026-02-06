@@ -61,14 +61,14 @@ jobs:
           - os: ubuntu-24.04-arm
             platform: linux
             arch: aarch64
-          - os: macos-13
-            platform: macos
-            arch: x86_64
-            macos_target: 13.0
           - os: macos-14
             platform: macos
             arch: arm64
             macos_target: 14.0
+          - os: macos-15
+            platform: macos
+            arch: arm64
+            macos_target: 15.0
           - os: windows-latest
             platform: windows
             arch: AMD64
