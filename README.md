@@ -52,57 +52,5 @@ Run static checks locally with:
 
 ```bash
 pip install . pyrefly
-python - <<'PY'
-import ast
-import pathlib
-import subprocess
-import sys
-import tempfile
-
-import kvxopt
-
-pkg_dir = pathlib.Path(kvxopt.__file__).resolve().parent
-stubs = sorted(pkg_dir.glob("*.pyi"))
-fixtures = sorted(pathlib.Path("tests/types").glob("*.py"))
-
-forbidden = {"Any", "object"}
-violations = []
-for path in [*stubs, *fixtures]:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    for node in ast.walk(tree):
-        for ann in (
-            [node.annotation] if isinstance(node, ast.AnnAssign) else
-            [node.returns, *(a.annotation for a in node.args.args + node.args.kwonlyargs if a.annotation)]
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else
-            []
-        ):
-            if ann is None:
-                continue
-            for child in ast.walk(ann):
-                if isinstance(child, ast.Name) and child.id in forbidden:
-                    violations.append((path, getattr(ann, "lineno", 1), child.id))
-if violations:
-    for path, line, label in sorted(set(violations), key=lambda item: (str(item[0]), item[1], item[2])):
-        print(f"{path}:{line}: forbidden annotation {label}", file=sys.stderr)
-    raise SystemExit(1)
-
-with tempfile.TemporaryDirectory(prefix="kvxopt-pyrefly-") as tmp:
-    root = pathlib.Path(tmp)
-    stub_pkg = root / "kvxopt"
-    stub_pkg.mkdir(parents=True, exist_ok=True)
-    for stub in stubs:
-        try:
-            (stub_pkg / stub.name).symlink_to(stub)
-        except OSError:
-            (stub_pkg / stub.name).write_text(stub.read_text(encoding="utf-8"), encoding="utf-8")
-    cmd = [
-        "pyrefly", "check",
-        "--config", "pyproject.toml",
-        "--search-path", str(root),
-        "--output-format", "full-text",
-        *[str(path) for path in sorted(stub_pkg.glob("*.pyi"))],
-        *[str(path) for path in fixtures],
-    ]
-    raise SystemExit(subprocess.run(cmd).returncode)
-PY
+python tools/typecheck.py
 ```
