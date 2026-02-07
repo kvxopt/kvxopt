@@ -35,12 +35,12 @@ jobs:
             UPLOAD_TO_TEST_PYPI=0
             UPLOAD_TO_OFFI_PYPI=0
           elif [[ "${GITHUB_REF_NAME}" == "master" ]]; then
-            BUILD_COMMIT="${GITHUB_SHA}"
+            BUILD_COMMIT="master"
             SCM_VERSION=""
             UPLOAD_TO_TEST_PYPI=1
             UPLOAD_TO_OFFI_PYPI=0
           else
-            BUILD_COMMIT="${GITHUB_SHA}"
+            BUILD_COMMIT="${GITHUB_REF_NAME}"
             SCM_VERSION=""
             UPLOAD_TO_TEST_PYPI=0
             UPLOAD_TO_OFFI_PYPI=0
@@ -112,7 +112,9 @@ jobs:
       - name: Checkout kvxopt source
         uses: actions/checkout@v4
         with:
+          repository: 'sanurielf/kvxopt'
           ref: ${{ needs.config.outputs.build_commit }}
+          path: .
           fetch-depth: 0
           fetch-tags: true
 
@@ -205,7 +207,9 @@ jobs:
       - name: Checkout kvxopt source
         uses: actions/checkout@v4
         with:
+          repository: 'sanurielf/kvxopt'
           ref: ${{ needs.config.outputs.build_commit }}
+          path: .
           fetch-depth: 0
           fetch-tags: true
 
