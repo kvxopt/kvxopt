@@ -3,8 +3,12 @@ name: Build wheels
 on:
   push:
     branches: [ master, dev ]
+    tags:
+      - "*"
   pull_request:
     branches: [ master ]
+  release:
+    types: [ published ]
 
 jobs:
   config:
@@ -16,41 +20,60 @@ jobs:
       upload_test_pypi: ${{ steps.config.outputs.upload_test_pypi }}
       upload_official_pypi: ${{ steps.config.outputs.upload_official_pypi }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-            fetch-depth: 0
-            fetch-tags: true
-
       - name: Load and set configuration
         id: config
         shell: bash
         run: |
-          # Source configuration files using bash[3]
-          bash -c "source .ci/config/build.env && source .ci/config/versions.env"
+          if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
+            BUILD_COMMIT="${GITHUB_REF_NAME}"
+            SCM_VERSION="${GITHUB_REF_NAME}"
+            UPLOAD_TO_TEST_PYPI=0
+            UPLOAD_TO_OFFI_PYPI=1
+          elif [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            BUILD_COMMIT="${GITHUB_REF_NAME}"
+            SCM_VERSION="${GITHUB_REF_NAME}"
+            UPLOAD_TO_TEST_PYPI=0
+            UPLOAD_TO_OFFI_PYPI=0
+          elif [[ "${GITHUB_REF_NAME}" == "master" ]]; then
+            BUILD_COMMIT="${GITHUB_SHA}"
+            SCM_VERSION=""
+            UPLOAD_TO_TEST_PYPI=1
+            UPLOAD_TO_OFFI_PYPI=0
+          else
+            BUILD_COMMIT="${GITHUB_SHA}"
+            SCM_VERSION=""
+            UPLOAD_TO_TEST_PYPI=0
+            UPLOAD_TO_OFFI_PYPI=0
+          fi
 
-          # Load variables manually since sourcing doesn't persist
-          BUILD_COMMIT=$(bash -c "source .ci/config/build.env && echo \$BUILD_COMMIT")
-          SETUPTOOLS_SCM_PRETEND_VERSION=$(bash -c "source .ci/config/build.env && echo \$SETUPTOOLS_SCM_PRETEND_VERSION")
-          UPLOAD_TO_TEST_PYPI=$(bash -c "source .ci/config/build.env && echo \$UPLOAD_TO_TEST_PYPI")
-          UPLOAD_TO_OFFI_PYPI=$(bash -c "source .ci/config/build.env && echo \$UPLOAD_TO_OFFI_PYPI")
-
-
-          # Set outputs for other jobs to use
           echo "build_commit=${BUILD_COMMIT}" >> $GITHUB_OUTPUT
-          echo "scm_version=${SETUPTOOLS_SCM_PRETEND_VERSION}" >> $GITHUB_OUTPUT
+          echo "scm_version=${SCM_VERSION}" >> $GITHUB_OUTPUT
           echo "upload_test_pypi=${UPLOAD_TO_TEST_PYPI}" >> $GITHUB_OUTPUT
           echo "upload_official_pypi=${UPLOAD_TO_OFFI_PYPI}" >> $GITHUB_OUTPUT
 
-          # Display configuration
           echo "Build commit: ${BUILD_COMMIT}"
-          echo "SCM Pretend Version: ${SETUPTOOLS_SCM_PRETEND_VERSION}"
+          echo "SCM Pretend Version: ${SCM_VERSION}"
           echo "Upload to TestPyPI: ${UPLOAD_TO_TEST_PYPI}"
           echo "Upload to PyPI: ${UPLOAD_TO_OFFI_PYPI}"
+
+  create_release:
+    name: Create GitHub release
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
+    permissions:
+      contents: write
+    steps:
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
 
   build_wheels:
     name: Build wheels on ${{ matrix.os }}
     needs: config
     runs-on: ${{ matrix.os }}
+    if: ${{ github.event_name == 'release' || (github.event_name == 'push' && github.ref_name == 'master') }}
     strategy:
       fail-fast: false
       matrix:
@@ -89,9 +112,7 @@ jobs:
       - name: Checkout kvxopt source
         uses: actions/checkout@v4
         with:
-          repository: 'sanurielf/kvxopt'
           ref: ${{ needs.config.outputs.build_commit }}
-          path: .
           fetch-depth: 0
           fetch-tags: true
 
@@ -104,8 +125,6 @@ jobs:
       - name: Load build configuration
         shell: bash
         run: |
-          # Source configuration files using bash[3]
-          source .ci/config/build.env
           source .ci/config/versions.env
 
           # Export all variables to GITHUB_ENV for subsequent steps
@@ -181,13 +200,12 @@ jobs:
     name: Build source distribution
     needs: config
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'release' || (github.event_name == 'push' && github.ref_name == 'master') }}
     steps:
       - name: Checkout kvxopt source
         uses: actions/checkout@v4
         with:
-          repository: 'sanurielf/kvxopt'
           ref: ${{ needs.config.outputs.build_commit }}
-          path: .
           fetch-depth: 0
           fetch-tags: true
 
@@ -239,7 +257,6 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
-          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
           verbose: true
           skip-existing: true
 
@@ -252,8 +269,7 @@ jobs:
       (needs.build_wheels.result == 'success') &&
       (needs.build_sdist.result == 'success') &&
       (needs.config.outputs.upload_official_pypi == '1') &&
-      (github.event_name == 'push') &&
-      (github.ref == 'refs/heads/master')
+      (github.event_name == 'release')
 
     environment:
       name: pypi
@@ -279,5 +295,3 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
