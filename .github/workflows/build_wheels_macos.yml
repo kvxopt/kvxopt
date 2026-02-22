@@ -1,0 +1,81 @@
+name: Build wheels (macOS)
+
+on:
+  workflow_call:
+    inputs:
+      build_commit:
+        required: true
+        type: string
+      scm_version:
+        required: true
+        type: string
+
+jobs:
+  build_wheels:
+    name: Build on macOS ${{ matrix.macos_target }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: macos
+            arch: arm64
+            macos_target: 14.0
+          - os: macos-15
+            platform: macos
+            arch: arm64
+            macos_target: 15.0
+
+    steps:
+      - name: Checkout kvxopt source
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: actions/checkout@v4
+        with:
+          repository: 'kvxopt/kvxopt'
+          ref: ${{ inputs.build_commit }}
+          path: .
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Checkout kvxopt source (PR)
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Load build configuration
+        shell: bash
+        run: |
+          source .ci/config/versions.env
+
+          # Export all variables to GITHUB_ENV for subsequent steps
+          grep '^export ' .ci/config/versions.env | sed 's/export //' >> $GITHUB_ENV
+          echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+          echo "BUILD_COMMIT=${{ inputs.build_commit }}" >> $GITHUB_ENV
+
+      - name: Prepare source for building
+        shell: bash
+        run: |
+          echo "Building from commit: $(git rev-parse HEAD)"
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.23.3
+        env:
+          CIBW_ARCHS_MACOS: ${{ matrix.arch }}
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ inputs.scm_version }}
+
+          CIBW_ENVIRONMENT_MACOS: >
+            MACOSX_DEPLOYMENT_TARGET=${{ matrix.macos_target }}
+            KVXOPT_BUILD_GLPK=1
+            KVXOPT_BUILD_FFTW=1
+            KVXOPT_BUILD_OSQP=1
+            KVXOPT_BUILD_GSL=1
+
+          CIBW_BEFORE_ALL: bash .ci/scripts/install_dependencies.sh ${{ matrix.platform }} ${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-wheels-${{ matrix.os }}-${{ matrix.arch }}
+          path: ./wheelhouse/*.whl

@@ -1,0 +1,102 @@
+name: Build wheels (Windows)
+
+on:
+  workflow_call:
+    inputs:
+      build_commit:
+        required: true
+        type: string
+      scm_version:
+        required: true
+        type: string
+
+jobs:
+  build_wheels:
+    name: Build on Windows (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            arch: AMD64
+            cmake_target: x64
+            vc_target: x64
+            glpk_target: w64
+            fftw_target: 64
+
+    steps:
+      - name: Checkout kvxopt source
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: actions/checkout@v4
+        with:
+          repository: 'kvxopt/kvxopt'
+          ref: ${{ inputs.build_commit }}
+          path: .
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Checkout kvxopt source (PR)
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Load build configuration
+        shell: bash
+        run: |
+          source .ci/config/versions.env
+
+          # Export all variables to GITHUB_ENV for subsequent steps
+          grep '^export ' .ci/config/versions.env | sed 's/export //' >> $GITHUB_ENV
+          echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+          echo "BUILD_COMMIT=${{ inputs.build_commit }}" >> $GITHUB_ENV
+
+      - name: Prepare source for building
+        shell: bash
+        run: |
+          echo "Building from commit: $(git rev-parse HEAD)"
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.23.3
+        env:
+          CIBW_ARCHS_WINDOWS: ${{ matrix.arch }}
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ inputs.scm_version }}
+
+          CIBW_ENVIRONMENT_WINDOWS: >
+            WINDOWS_CMAKE_TARGET=${{ matrix.cmake_target || 'Win32' }}
+            WINDOWS_VC_TARGET=${{ matrix.vc_target || '32' }}
+            WINDOWS_GLPK_TARGET=${{ matrix.glpk_target || '32' }}
+            WINDOWS_FFTW_TARGET=${{ matrix.fftw_target || '32' }}
+            KVXOPT_GSL_INC_DIR=C:/gsl-install/include
+            KVXOPT_GSL_LIB_DIR=C:/gsl-install/lib/Debug
+            KVXOPT_GLPK_INC_DIR=C:/glpk-install/include
+            KVXOPT_GLPK_LIB_DIR=C:/glpk-install/lib
+            KVXOPT_OSQP_INC_DIR=C:/osqp-install/include/osqp
+            KVXOPT_OSQP_LIB_DIR=C:/osqp-install/lib
+            KVXOPT_BLAS_LIB_DIR=C:/openblas-install/lib
+            KVXOPT_BLAS_INC_DIR=C:/openblas-install/include
+            KVXOPT_LAPACK_LIB_DIR=C:/openblas-install/lib
+            KVXOPT_FFTW_INC_DIR=C:/fftw-install
+            KVXOPT_FFTW_LIB_DIR=C:/fftw-install
+            KVXOPT_FFTW_LIB=libfftw3-3
+            ARCH=${{ matrix.arch }}
+            KVXOPT_LAPACK_LIB=libopenblas
+            KVXOPT_BLAS_LIB=libopenblas
+            VCPKG_DEFAULT_TRIPLET=${{ matrix.vc_target ||'x64' }}-windows
+            KVXOPT_SUITESPARSE_SRC_DIR="./suitesparse"
+            KVXOPT_MSVC=1
+            KVXOPT_BUILD_GSL=1
+            KVXOPT_BUILD_FFTW=1
+            KVXOPT_BUILD_GLPK=1
+            KVXOPT_BUILD_OSQP=1
+            KVXOPT_BUILD_DSDP=0
+
+          CIBW_BEFORE_ALL_WINDOWS: "\".ci/scripts/install_dependencies.bat\" ${{ matrix.platform }} ${{ matrix.arch }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-wheels-${{ matrix.os }}-${{ matrix.arch }}
+          path: ./wheelhouse/*.whl

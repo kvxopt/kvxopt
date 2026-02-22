@@ -69,141 +69,58 @@ jobs:
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true
 
-  build_wheels:
-    name: Build wheels on ${{ matrix.os }}
-    needs: config
-    runs-on: ${{ matrix.os }}
-    if: ${{ github.event_name == 'release' || github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref_name == 'master' || github.ref_type == 'tag')) }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            platform: linux
-            arch: x86_64
-          - os: ubuntu-24.04-arm
-            platform: linux
-            arch: aarch64
-          - os: macos-14
-            platform: macos
-            arch: arm64
-            macos_target: 14.0
-          - os: macos-15
-            platform: macos
-            arch: arm64
-            macos_target: 15.0
-          - os: windows-latest
-            platform: windows
-            arch: AMD64
-            cmake_target: x64
-            vc_target: x64
-            glpk_target: w64
-            fftw_target: 64
-        #   - os: windows-latest
-        #     platform: windows
-        #     arch: x86
-        #     cmake_target: Win32
-        #     vc_target: x86
-        #     glpk_target: w32
-        #     fftw_target: 32
-
+  upload_release_assets:
+    name: Upload release assets
+    needs: [build_wheels_linux, build_wheels_macos, build_wheels_windows, build_sdist]
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
+    permissions:
+      contents: write
     steps:
-      - name: Checkout kvxopt source
-        if: ${{ github.event_name != 'pull_request' }}
-        uses: actions/checkout@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
         with:
-          repository: 'sanurielf/kvxopt'
-          ref: ${{ needs.config.outputs.build_commit }}
-          path: .
-          fetch-depth: 0
-          fetch-tags: true
+          pattern: cibw-*
+          path: dist
+          merge-multiple: true
 
-      - name: Checkout kvxopt source (PR)
-        if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Set up QEMU for cross-compilation
-        if: runner.os == 'Linux' && runner.arch == 'X64'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: all
-
-      - name: Load build configuration
-        shell: bash
+      - name: Display release artifacts
         run: |
-          source .ci/config/versions.env
+          echo "Release artifacts:"
+          ls -la dist/
 
-          # Export all variables to GITHUB_ENV for subsequent steps
-          grep '^export ' .ci/config/versions.env | sed 's/export //' >> $GITHUB_ENV
-          echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
-          echo "BUILD_COMMIT=${{ needs.config.outputs.build_commit }}" >> $GITHUB_ENV
-
-      # Copy source to build location
-      - name: Prepare source for building
-        shell: bash
-        run: |
-          echo "Building from commit: $(git rev-parse HEAD)"
-
-      - name: Build wheels
-        uses: pypa/cibuildwheel@v2.23.3
-        env:
-          CIBW_ARCHS_LINUX: ${{ matrix.arch }}
-          CIBW_ARCHS_MACOS: ${{ matrix.arch }}
-          CIBW_ARCHS_WINDOWS: ${{ matrix.arch }}
-          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ needs.config.outputs.scm_version }}
-
-
-          CIBW_ENVIRONMENT_PASS_LINUX:
-            SETUPTOOLS_SCM_PRETEND_VERSION
-
-          CIBW_ENVIRONMENT_MACOS: >
-            MACOSX_DEPLOYMENT_TARGET=${{ matrix.macos_target }}
-            KVXOPT_BUILD_GLPK=1
-            KVXOPT_BUILD_FFTW=1
-            KVXOPT_BUILD_OSQP=1
-            KVXOPT_BUILD_GSL=1
-
-          CIBW_ENVIRONMENT_WINDOWS: >
-            WINDOWS_CMAKE_TARGET=${{ matrix.cmake_target || 'Win32' }}
-            WINDOWS_VC_TARGET=${{ matrix.vc_target || '32' }}
-            WINDOWS_GLPK_TARGET=${{ matrix.glpk_target || '32' }}
-            WINDOWS_FFTW_TARGET=${{ matrix.fftw_target || '32' }}
-            KVXOPT_GSL_INC_DIR=C:/gsl-install/include
-            KVXOPT_GSL_LIB_DIR=C:/gsl-install/lib/Debug
-            KVXOPT_GLPK_INC_DIR=C:/glpk-install/include
-            KVXOPT_GLPK_LIB_DIR=C:/glpk-install/lib
-            KVXOPT_OSQP_INC_DIR=C:/osqp-install/include/osqp
-            KVXOPT_OSQP_LIB_DIR=C:/osqp-install/lib
-            KVXOPT_BLAS_LIB_DIR=C:/openblas-install/lib
-            KVXOPT_BLAS_INC_DIR=C:/openblas-install/include
-            KVXOPT_LAPACK_LIB_DIR=C:/openblas-install/lib
-            KVXOPT_FFTW_INC_DIR=C:/fftw-install
-            KVXOPT_FFTW_LIB_DIR=C:/fftw-install
-            KVXOPT_FFTW_LIB=libfftw3-3
-            ARCH=${{ matrix.arch }}
-            KVXOPT_LAPACK_LIB=libopenblas
-            KVXOPT_BLAS_LIB=libopenblas
-            VCPKG_DEFAULT_TRIPLET=${{ matrix.vc_target ||'x64' }}-windows
-            KVXOPT_SUITESPARSE_SRC_DIR="./suitesparse"
-            KVXOPT_MSVC=1
-            KVXOPT_BUILD_GSL=1
-            KVXOPT_BUILD_FFTW=1
-            KVXOPT_BUILD_GLPK=1
-            KVXOPT_BUILD_OSQP=1
-            KVXOPT_BUILD_DSDP=0
-
-
-          # Use bash command for cibuildwheel script execution[3][5]
-          CIBW_BEFORE_ALL: bash .ci/scripts/install_dependencies.sh ${{ matrix.platform }} ${{ matrix.arch }}
-          CIBW_BEFORE_ALL_WINDOWS: "\".ci/scripts/install_dependencies.bat\" ${{ matrix.platform }} ${{ matrix.arch }}"
-
-      - uses: actions/upload-artifact@v4
+      - name: Upload assets to release
+        uses: softprops/action-gh-release@v2
         with:
-          name: cibw-wheels-${{ matrix.os }}-${{ matrix.arch }}
-          path: ./wheelhouse/*.whl
+          tag_name: ${{ github.ref_name }}
+          files: dist/*
+
+  build_wheels_linux:
+    name: Build wheels (Linux)
+    needs: config
+    if: ${{ github.event_name == 'release' || github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref_name == 'master' || github.ref_type == 'tag')) }}
+    uses: ./.github/workflows/build_wheels_linux.yml
+    with:
+      build_commit: ${{ needs.config.outputs.build_commit }}
+      scm_version: ${{ needs.config.outputs.scm_version }}
+
+  build_wheels_macos:
+    name: Build wheels (macOS)
+    needs: config
+    if: ${{ github.event_name == 'release' || github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref_name == 'master' || github.ref_type == 'tag')) }}
+    uses: ./.github/workflows/build_wheels_macos.yml
+    with:
+      build_commit: ${{ needs.config.outputs.build_commit }}
+      scm_version: ${{ needs.config.outputs.scm_version }}
+
+  build_wheels_windows:
+    name: Build wheels (Windows)
+    needs: config
+    if: ${{ github.event_name == 'release' || github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref_name == 'master' || github.ref_type == 'tag')) }}
+    uses: ./.github/workflows/build_wheels_windows.yml
+    with:
+      build_commit: ${{ needs.config.outputs.build_commit }}
+      scm_version: ${{ needs.config.outputs.scm_version }}
 
   build_sdist:
     name: Build source distribution
@@ -215,7 +132,7 @@ jobs:
         if: ${{ github.event_name != 'pull_request' }}
         uses: actions/checkout@v4
         with:
-          repository: 'sanurielf/kvxopt'
+          repository: 'kvxopt/kvxopt'
           ref: ${{ needs.config.outputs.build_commit }}
           path: .
           fetch-depth: 0
@@ -242,11 +159,13 @@ jobs:
 
   upload_test_pypi:
     name: Upload to TestPyPI
-    needs: [config, build_wheels, build_sdist]
+    needs: [config, build_wheels_linux, build_wheels_macos, build_wheels_windows, build_sdist]
     runs-on: ubuntu-latest
     if: >
       always() &&
-      (needs.build_wheels.result == 'success') &&
+      (needs.build_wheels_linux.result == 'success') &&
+      (needs.build_wheels_macos.result == 'success') &&
+      (needs.build_wheels_windows.result == 'success') &&
       (needs.build_sdist.result == 'success') &&
       (needs.config.outputs.upload_test_pypi == '1')
 
@@ -281,11 +200,13 @@ jobs:
 
   upload_pypi:
     name: Upload to PyPI
-    needs: [config, build_wheels, build_sdist]
+    needs: [config, build_wheels_linux, build_wheels_macos, build_wheels_windows, build_sdist]
     runs-on: ubuntu-latest
     if: >
       always() &&
-      (needs.build_wheels.result == 'success') &&
+      (needs.build_wheels_linux.result == 'success') &&
+      (needs.build_wheels_macos.result == 'success') &&
+      (needs.build_wheels_windows.result == 'success') &&
       (needs.build_sdist.result == 'success') &&
       (needs.config.outputs.upload_official_pypi == '1') &&
       (github.event_name == 'release' || (github.event_name == 'push' && github.ref_type == 'tag'))

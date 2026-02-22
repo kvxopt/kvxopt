@@ -1,0 +1,81 @@
+name: Build wheels (Linux)
+
+on:
+  workflow_call:
+    inputs:
+      build_commit:
+        required: true
+        type: string
+      scm_version:
+        required: true
+        type: string
+
+jobs:
+  build_wheels:
+    name: Build on ${{ matrix.os }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: aarch64
+
+    steps:
+      - name: Checkout kvxopt source
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: actions/checkout@v4
+        with:
+          repository: 'kvxopt/kvxopt'
+          ref: ${{ inputs.build_commit }}
+          path: .
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Checkout kvxopt source (PR)
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up QEMU for cross-compilation
+        if: runner.os == 'Linux' && runner.arch == 'X64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: all
+
+      - name: Load build configuration
+        shell: bash
+        run: |
+          source .ci/config/versions.env
+
+          # Export all variables to GITHUB_ENV for subsequent steps
+          grep '^export ' .ci/config/versions.env | sed 's/export //' >> $GITHUB_ENV
+          echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+          echo "BUILD_COMMIT=${{ inputs.build_commit }}" >> $GITHUB_ENV
+
+      - name: Prepare source for building
+        shell: bash
+        run: |
+          echo "Building from commit: $(git rev-parse HEAD)"
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.23.3
+        env:
+          CIBW_ARCHS_LINUX: ${{ matrix.arch }}
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ inputs.scm_version }}
+
+          CIBW_ENVIRONMENT_PASS_LINUX:
+            SETUPTOOLS_SCM_PRETEND_VERSION
+
+          CIBW_BEFORE_ALL: bash .ci/scripts/install_dependencies.sh ${{ matrix.platform }} ${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cibw-wheels-${{ matrix.os }}-${{ matrix.arch }}
+          path: ./wheelhouse/*.whl

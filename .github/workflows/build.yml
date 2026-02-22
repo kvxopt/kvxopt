@@ -92,11 +92,9 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          directory: ./coverage/reports/
-          env_vars: OS,PYTHON
           files: ./coverage.xml
           fail_ci_if_error: true
           flags: unittests
           token: ${{ secrets.CODECOV_TOKEN }}
-          slug: sanurielf/kvxopt
+          slug: kvxopt/kvxopt
           verbose: true
