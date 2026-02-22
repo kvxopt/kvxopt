@@ -163,8 +163,8 @@ matrix * Matrix_New(int nrows, int ncols, int id)
   a->ob_exports = 0;
   a->shape[0] = nrows;
   a->shape[1] = ncols;
-  a->strides[0] = ncols * E_SIZE[a->id];
-  a->strides[1] = E_SIZE[a->id];
+  a->strides[0] = E_SIZE[a->id];
+  a->strides[1] = nrows * E_SIZE[a->id];
   if ((a->buffer = calloc(nrows*ncols,E_SIZE[id])))
     return a;
   else if (nrows*ncols == 0) 
