@@ -73,7 +73,7 @@ jobs:
     name: Build wheels on ${{ matrix.os }}
     needs: config
     runs-on: ${{ matrix.os }}
-    if: ${{ github.event_name == 'release' || (github.event_name == 'push' && github.ref_name == 'master') }}
+    if: ${{ github.event_name == 'release' || github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_name == 'master') }}
     strategy:
       fail-fast: false
       matrix:
@@ -108,13 +108,20 @@ jobs:
         #     fftw_target: 32
 
     steps:
-      # Checkout the specific commit from main kvxopt repo
       - name: Checkout kvxopt source
+        if: ${{ github.event_name != 'pull_request' }}
         uses: actions/checkout@v4
         with:
           repository: 'sanurielf/kvxopt'
           ref: ${{ needs.config.outputs.build_commit }}
           path: .
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Checkout kvxopt source (PR)
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/checkout@v4
+        with:
           fetch-depth: 0
           fetch-tags: true
 
@@ -202,14 +209,22 @@ jobs:
     name: Build source distribution
     needs: config
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'release' || (github.event_name == 'push' && github.ref_name == 'master') }}
+    if: ${{ github.event_name == 'release' || github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_name == 'master') }}
     steps:
       - name: Checkout kvxopt source
+        if: ${{ github.event_name != 'pull_request' }}
         uses: actions/checkout@v4
         with:
           repository: 'sanurielf/kvxopt'
           ref: ${{ needs.config.outputs.build_commit }}
           path: .
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Checkout kvxopt source (PR)
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/checkout@v4
+        with:
           fetch-depth: 0
           fetch-tags: true
 
