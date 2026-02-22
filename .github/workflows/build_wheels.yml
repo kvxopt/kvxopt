@@ -33,7 +33,7 @@ jobs:
             BUILD_COMMIT="${GITHUB_REF_NAME}"
             SCM_VERSION="${GITHUB_REF_NAME}"
             UPLOAD_TO_TEST_PYPI=0
-            UPLOAD_TO_OFFI_PYPI=0
+            UPLOAD_TO_OFFI_PYPI=1
           elif [[ "${GITHUB_REF_NAME}" == "master" ]]; then
             BUILD_COMMIT="master"
             SCM_VERSION=""
@@ -73,7 +73,7 @@ jobs:
     name: Build wheels on ${{ matrix.os }}
     needs: config
     runs-on: ${{ matrix.os }}
-    if: ${{ github.event_name == 'release' || github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_name == 'master') }}
+    if: ${{ github.event_name == 'release' || github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref_name == 'master' || github.ref_type == 'tag')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -209,7 +209,7 @@ jobs:
     name: Build source distribution
     needs: config
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'release' || github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_name == 'master') }}
+    if: ${{ github.event_name == 'release' || github.event_name == 'pull_request' || (github.event_name == 'push' && (github.ref_name == 'master' || github.ref_type == 'tag')) }}
     steps:
       - name: Checkout kvxopt source
         if: ${{ github.event_name != 'pull_request' }}
@@ -288,7 +288,7 @@ jobs:
       (needs.build_wheels.result == 'success') &&
       (needs.build_sdist.result == 'success') &&
       (needs.config.outputs.upload_official_pypi == '1') &&
-      (github.event_name == 'release')
+      (github.event_name == 'release' || (github.event_name == 'push' && github.ref_type == 'tag'))
 
     environment:
       name: pypi
