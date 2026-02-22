@@ -2,6 +2,7 @@
 set -e
 
 echo "Building OSQP ${OSQP_VERSION} from source.... OS: ${OSTYPE}, ARCH: ${ARCH:-x64} CMAKE_TARGET: ${WINDOWS_CMAKE_TARGET:-x64}"
+PROJECT_ROOT="$(pwd)"
 
 # Clone and checkout specific version
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
@@ -33,7 +34,7 @@ fi
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin"  || "$OSTYPE" == "win32" ]]; then
     echo "Compiling OSQP with cmake for Windows..."
     cmake --build . --config Release --target install
-    cp $INSTALL_PREFIX/bin/*.dll ../../src/python/.libs
+    cp $INSTALL_PREFIX/bin/*.dll "$PROJECT_ROOT/src/python/.libs"
 elif [[ "$OSTYPE" == "darwin"* ]]; then
     echo "Compiling OSQP with make for macOS..."
     make -j$(sysctl -n hw.ncpu) && sudo make install
