@@ -1,25 +1,26 @@
-
-echo Initiallizing Visual Studio environment for architecture: %WINDOWS_VC_TARGET%
+echo Initializing Visual Studio environment for architecture: %WINDOWS_VC_TARGET%
 
 call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" %WINDOWS_VC_TARGET%
 
+echo Building FFTW for architecture: %WINDOWS_CMAKE_TARGET%
 
-echo Creating .lib import files for FFTW for architecture: %WINDOWS_CMAKE_TARGET%
+pushd fftw-%FFTW_VERSION%
 
-C:
+md build
+pushd build
 
-cd C:\fftw-install\
+cmake -G "Visual Studio 17 2022" -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -A %WINDOWS_CMAKE_TARGET% -DBUILD_SHARED_LIBS=ON -DBUILD_TESTS=OFF -DENABLE_THREADS=ON -DWITH_COMBINED_THREADS=ON -DCMAKE_INSTALL_PREFIX="C:/fftw-install" ..
 
+cmake --build . --config Release --target install
 
-lib /machine:%ARCH% /def:libfftw3-3.def
+popd
+popd
 
-if errorlevel 1 (
-    echo Error: lib command failed
-    exit /b 1
-)
+if not exist src\python\.libs md src\python\.libs
+if exist C:\fftw-install\bin\*.dll copy C:\fftw-install\bin\*.dll src\python\.libs\
+if exist C:\fftw-install\lib\*.dll copy C:\fftw-install\lib\*.dll src\python\.libs\
 
-echo Creating import files for FFTW completed successfully.
+echo Building FFTW completed successfully.
 
-dir C:\fftw-install
-
-D:
+dir C:\fftw-install\include
+dir C:\fftw-install\lib

@@ -79,9 +79,9 @@ jobs:
             KVXOPT_BLAS_LIB_DIR=C:/openblas-install/lib
             KVXOPT_BLAS_INC_DIR=C:/openblas-install/include
             KVXOPT_LAPACK_LIB_DIR=C:/openblas-install/lib
-            KVXOPT_FFTW_INC_DIR=C:/fftw-install
-            KVXOPT_FFTW_LIB_DIR=C:/fftw-install
-            KVXOPT_FFTW_LIB=libfftw3-3
+            KVXOPT_FFTW_INC_DIR=C:/fftw-install/include
+            KVXOPT_FFTW_LIB_DIR=C:/fftw-install/lib
+            KVXOPT_FFTW_LIB=fftw3
             ARCH=${{ matrix.arch }}
             KVXOPT_LAPACK_LIB=libopenblas
             KVXOPT_BLAS_LIB=libopenblas
