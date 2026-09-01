@@ -1,36 +1,38 @@
 #!/bin/bash
 set -e
 
-echo "Downloading FFFTW ${FFTW_VERSION} for Windows..."
+# Source configuration
+if [ -f ".ci/config/versions.env" ]; then
+    source .ci/config/versions.env
+fi
 
-# Download using curl (available in Git Bash on Windows)
-curl -L -o "fftw-${FFTW_VERSION}-dll${WINDOWS_FFTW_TARGET}.zip" \
-    "ftp://ftp.fftw.org/pub/fftw/fftw-${FFTW_VERSION}-dll${WINDOWS_FFTW_TARGET}.zip"
+echo "Downloading FFTW ${FFTW_VERSION} for Windows..."
 
-ls
-
+# Download using curl
+curl -L -o "fftw-${FFTW_VERSION}.tar.gz" \
+    "https://www.fftw.org/pub/fftw/fftw-${FFTW_VERSION}.tar.gz"
 
 # Verify download was successful
-if [ ! -f "fftw-${FFTW_VERSION}-dll${WINDOWS_FFTW_TARGET}.zip" ]; then
+if [ ! -f "fftw-${FFTW_VERSION}.tar.gz" ]; then
     echo "Error: FFTW download failed"
     exit 1
 fi
 
 # Get file size to ensure it's not empty
-FILE_SIZE=$(stat -c%s "fftw-${FFTW_VERSION}-dll${WINDOWS_FFTW_TARGET}.zip" 2>/dev/null || echo 0)
+FILE_SIZE=$(stat -c%s "fftw-${FFTW_VERSION}.tar.gz" 2>/dev/null || echo 0)
 if [ "$FILE_SIZE" -lt 1000 ]; then
     echo "Error: Downloaded file is too small (${FILE_SIZE} bytes)"
     exit 1
 fi
 
-# Verify SHA256 checksum using certutil
-echo "Verifying SHA256 checksum using certutil..."
-ACTUAL_HASH=$(certutil -hashfile "fftw-${FFTW_VERSION}-dll${WINDOWS_FFTW_TARGET}.zip" SHA256 | grep -v "SHA256" | grep -v "CertUtil" | tr -d ' \r\n' | tr '[:upper:]' '[:lower:]')
-
-if [ ${WINDOWS_FFTW_TARGET} == "64" ]; then
-    FFTW_SHA256=${FFTW_SHA256_X64}
+# Verify SHA256 checksum using certutil (on Windows) or shasum/sha256sum
+echo "Verifying SHA256 checksum..."
+if command -v certutil &> /dev/null; then
+    ACTUAL_HASH=$(certutil -hashfile "fftw-${FFTW_VERSION}.tar.gz" SHA256 | grep -v "SHA256" | grep -v "CertUtil" | tr -d ' \r\n' | tr '[:upper:]' '[:lower:]')
+elif command -v sha256sum &> /dev/null; then
+    ACTUAL_HASH=$(sha256sum "fftw-${FFTW_VERSION}.tar.gz" | awk '{print $1}')
 else
-    FFTW_SHA256=${FFTW_SHA256_X86}
+    ACTUAL_HASH=$(shasum -a 256 "fftw-${FFTW_VERSION}.tar.gz" | awk '{print $1}')
 fi
 
 EXPECTED_HASH=$(echo "${FFTW_SHA256}" | tr '[:upper:]' '[:lower:]')
@@ -47,18 +49,11 @@ else
     echo "SHA256 verification passed"
 fi
 
-# Extract using tar (available in Git Bash)
+# Extract using tar
 echo "Extracting FFTW..."
-mkdir C:/fftw-install
-
-unzip "fftw-${FFTW_VERSION}-dll${WINDOWS_FFTW_TARGET}.zip" -d C:/fftw-install
-
-dir C:/fftw-install
+tar -xf "fftw-${FFTW_VERSION}.tar.gz"
 
 # Clean up
-rm "fftw-${FFTW_VERSION}-dll${WINDOWS_FFTW_TARGET}.zip"
-
-cp C:/fftw-install/*.dll ./src/python/.libs
-
+rm "fftw-${FFTW_VERSION}.tar.gz"
 
 echo "FFTW setup completed"

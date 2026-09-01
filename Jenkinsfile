@@ -6,8 +6,8 @@ pipeline {
     KVXOPT_BUILD_GLPK = '1'
     KVXOPT_BUILD_DSDP = '1'
     KVXOPT_BUILD_OSQP = '1'
-    SUITESPARSE_VERSION = '5.10.1'
-    SUITESPARSE_SHA256 = 'acb4d1045f48a237e70294b950153e48dce5b5f9ca8190e86c2b8c54ce00a7ee'
+    SUITESPARSE_VERSION = '7.14.0'
+    SUITESPARSE_SHA256 = 'c552c4b4bb7d0978796e57263a73295bca0c6b41ad137b45b4f264cfe9300fcb'
     OSQP_VERSION = '0.6.2'
     OSQP_SHA256 = '0a7ade2fa19f13e13bc12f6ea0046ef764049023efb4997a4e72a76534f623ec'
     PREFIX_LINUX = '/usr/local'
@@ -51,124 +51,35 @@ pipeline {
               }
             }
 
-            stage('Get OSQP source and compile library'){
+            stage('Build OSQP') {
               steps {
-                sh '''wget https://github.com/osqp/osqp/releases/download/v${OSQP_VERSION}/complete_sources.tar.gz -O osqp-${OSQP_VERSION}.tar.gz
-                      echo "${OSQP_SHA256}  osqp-${OSQP_VERSION}.tar.gz" > OSQP.sha256
-                      shasum -a 256 -c OSQP.sha256
-                      tar -xf osqp-${OSQP_VERSION}.tar.gz
+                sh '''git clone --recursive https://github.com/oxfordcontrol/osqp.git
                       cd osqp
+                      git checkout v${OSQP_VERSION}
                       mkdir build
                       cd build
-                      cmake -DCMAKE_INSTALL_PREFIX=${PREFIX} ..
-                      cmake --build . --target install'''
+                      cmake -DCMAKE_INSTALL_PREFIX="${PREFIX}" -DCMAKE_BUILD_TYPE=Release ..
+                      make
+                      make install
+                      cd ../..
+                      rm -rf osqp'''
               }
             }
 
-            stage('Install') {
+            stage('Build and install kvxopt') {
               steps {
-                sh '''python setup.py build
-                      pip install .'''
+                sh '''python -m pip install .'''
               }
             }
 
             stage('Test') {
               steps {
-                sh '''python -c 'from kvxopt import blas,dsdp,lapack,glpk,osqp,fftw,gsl,cholmod,umfpack,klu'
-                      pytest --cov=kvxopt tests/'''
+                sh '''pytest --cov=kvxopt -s'''
               }
-            }
-
-          }
-        }
-        stage('Test in Linux server') {
-          agent { label 'node_local_debian' }
-
-          environment {
-            PATH = "${HOME}/.local/bin:$PATH"
-            KVXOPT_BUILD_GRB = '1'
-            KVXOPT_GRB_LIB_DIR = '/opt/gurobi912/linux64/lib'
-            LD_LIBRARY_PATH = '/opt/gurobi912/linux64/lib'
-            KVXOPT_GRB_INC_DIR = '/opt/gurobi912/linux64/include'
-            KVXOPT_GRB_LIB = 'gurobi91'
-          }
-
-          stages {
-
-            stage ('Create virtualenv') {
-              steps {
-                echo "PATH is: $PATH"
-                echo "SHELL is: $SHELL"
-                sh '''python3 -m pip install --upgrade virtualenv
-                      virtualenv --python=python3 venv
-                      . venv/bin/activate
-                    '''
-              }
-            }
-
-            stage ('Set environment paths') {
-              steps {
-
-                sh "printenv"
-                script {
-                  env.PREFIX = "${env.WORKSPACE}"
-                  env.KVXOPT_OSQP_LIB_DIR = "${PREFIX}/lib"
-                  env.KVXOPT_OSQP_INC_DIR = "${PREFIX}/include/osqp"
-                  env.LD_LIBRARY_PATH = "${PREFIX}/lib"
-                  sh 'mkdir -p ${PREFIX}/lib'
-                  sh 'mkdir -p ${PREFIX}/include'
-                }
-              }
-            }
-
-            stage('Install python dependencies') {
-              steps {
-                sh '''python3 -m pip install --upgrade pip
-                      pip3 install --upgrade setuptools setuptools_scm build wheel pytest pytest-cov coveralls numpy'''
-              }
-            }
-
-            stage('Get OSQP source and compile library'){
-              steps {
-                sh '''wget https://github.com/osqp/osqp/releases/download/v${OSQP_VERSION}/complete_sources.tar.gz -O osqp-${OSQP_VERSION}.tar.gz
-                      echo "${OSQP_SHA256}  osqp-${OSQP_VERSION}.tar.gz" > OSQP.sha256
-                      shasum -a 256 -c OSQP.sha256
-                      tar -xf osqp-${OSQP_VERSION}.tar.gz
-                      cd osqp
-                      mkdir build
-                      cd build
-                      cmake -DCMAKE_INSTALL_PREFIX=${PREFIX} ..
-                      cmake --build . --target install'''
-              }
-            }
-
-            stage('Install') {
-              steps {
-                sh '''python3 setup.py build
-                      pip3 install .'''
-              }
-            }
-
-            stage('Test') {
-              steps {
-                sh '''python3 -c 'from kvxopt import blas,dsdp,lapack,glpk,osqp,fftw,gsl,cholmod,umfpack,klu'
-                      pytest --cov=kvxopt tests/'''
-              }
-            }
-
-          }
-          post {
-            // Clean after build
-            always {
-                cleanWs(cleanWhenNotBuilt: false,
-                        deleteDirs: true,
-                        disableDeferredWipeout: true,
-                        notFailBuild: true)
             }
           }
         }
       }
     }
   }
-
 }
