@@ -71,7 +71,7 @@ jobs:
             WINDOWS_GLPK_TARGET=${{ matrix.glpk_target || '32' }}
             WINDOWS_FFTW_TARGET=${{ matrix.fftw_target || '32' }}
             KVXOPT_GSL_INC_DIR=C:/gsl-install/include
-            KVXOPT_GSL_LIB_DIR=C:/gsl-install/lib/Debug
+            KVXOPT_GSL_LIB_DIR=C:/gsl-install/lib
             KVXOPT_GLPK_INC_DIR=C:/glpk-install/include
             KVXOPT_GLPK_LIB_DIR=C:/glpk-install/lib
             KVXOPT_OSQP_INC_DIR=C:/osqp-install/include/osqp

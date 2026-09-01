@@ -22,9 +22,9 @@ git -c protocol.version=2 submodule update --init --force --depth=1 --recursive
 # Build
 mkdir build && cd build
 
-if [[ "$OSTYPE" == "win32" ]]; then
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
     echo "Generating build files for OSQP with cmake for Windows..."
-    cmake -G "Visual Studio 17 2022" -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -A $WINDOWS_CMAKE_TARGET -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" -DCMAKE_BUILD_TYPE=Release ..
+    cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -A "$WINDOWS_CMAKE_TARGET" -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" -DCMAKE_BUILD_TYPE=Release ..
 else
     echo "Generating build files for OSQP with cmake..."
     cmake -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" -DCMAKE_BUILD_TYPE=Release ..
