@@ -79,3 +79,4 @@ jobs:
         with:
           name: cibw-wheels-${{ matrix.os }}-${{ matrix.arch }}
           path: ./wheelhouse/*.whl
+          retention-days: 7

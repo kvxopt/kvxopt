@@ -202,7 +202,9 @@ static PyObject* order_c(PyObject *self, PyObject *args, PyObject *kwrds)
             }
         }
     }
+    Py_BEGIN_ALLOW_THREADS
     info = amd_order(n, colptr, rowind, MAT_BUFI(perm), control, NULL);
+    Py_END_ALLOW_THREADS
     if (alloc){
         free(colptr);
         free(rowind);
@@ -229,18 +231,22 @@ static PyMethodDef amd_functions[] = {
 
 #if PY_MAJOR_VERSION >= 3
 
+KVXOPT_MODULE_SLOTS(amd)
+
 static PyModuleDef amd_module_def = {
     PyModuleDef_HEAD_INIT,
     "amd",
     amd__doc__,
     -1,
     amd_functions,
-    NULL, NULL, NULL, NULL
+    KVXOPT_SLOTS(amd),
+    NULL, NULL, NULL
 };
 
 PyMODINIT_FUNC PyInit_amd(void)
 {
     if (!(amd_module = PyModule_Create(&amd_module_def))) return NULL;
+    KVXOPT_SET_GIL_SLOT(amd_module);
     PyModule_AddObject(amd_module, "options", PyDict_New());
     if (import_kvxopt() < 0) return NULL;
     return amd_module;

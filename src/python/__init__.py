@@ -314,13 +314,151 @@ spmatrix_repr = printing.spmatrix_repr_default
 from kvxopt.base import matrix, spmatrix, sparse, spdiag, sqrt, sin, cos, \
     tan, asin, acos, atan, conj, exp, log, norm
 
+from contextlib import contextmanager
+import ctypes
+import os
+
+def _iter_blas_cdlls():
+    """Iterate over candidate ctypes CDLL objects providing BLAS/LAPACK runtime hooks."""
+    if sys.platform != "win32":
+        try:
+            yield ctypes.CDLL(None)
+        except Exception:
+            pass
+    try:
+        from kvxopt import blas as _blas_mod
+        if hasattr(_blas_mod, "__file__") and _blas_mod.__file__:
+            yield ctypes.CDLL(_blas_mod.__file__)
+    except Exception:
+        pass
+    candidates = (
+        "libopenblas.so", "libopenblas.dylib", "libopenblas.dll", "openblas.dll",
+        "libmkl_rt.so", "libmkl_rt.dylib", "mkl_rt.dll",
+        "libgomp.so.1", "libomp.so", "libomp.dylib"
+    )
+    for name in candidates:
+        try:
+            yield ctypes.CDLL(name)
+        except Exception:
+            pass
+
+def _get_runtime_thread_counts() -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for cdll in _iter_blas_cdlls():
+        if "openblas" not in counts and hasattr(cdll, "openblas_get_num_threads"):
+            try:
+                counts["openblas"] = int(cdll.openblas_get_num_threads())
+            except Exception:
+                pass
+        if "mkl" not in counts:
+            for getter in ("mkl_get_max_threads", "MKL_Get_Max_Threads"):
+                if hasattr(cdll, getter):
+                    try:
+                        counts["mkl"] = int(getattr(cdll, getter)())
+                        break
+                    except Exception:
+                        pass
+        if "omp" not in counts and hasattr(cdll, "omp_get_max_threads"):
+            try:
+                counts["omp"] = int(cdll.omp_get_max_threads())
+            except Exception:
+                pass
+    return counts
+
+def set_blas_num_threads(n: int) -> None:
+    """Set the number of threads for OpenBLAS / MKL / OMP.
+
+    Parameters
+    ----------
+    n : int
+        Number of threads (must be positive).
+
+    Notes
+    -----
+    Sets environment variables OPENBLAS_NUM_THREADS, MKL_NUM_THREADS, and
+    OMP_NUM_THREADS. Also invokes direct in-process runtime symbols if
+    OpenBLAS, MKL, or OpenMP is loaded.
+    """
+    if n < 1:
+        raise ValueError("number of threads must be positive")
+
+    for env in ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "OMP_NUM_THREADS"):
+        os.environ[env] = str(n)
+
+    c_n = ctypes.c_int(n)
+    for cdll in _iter_blas_cdlls():
+        if hasattr(cdll, "openblas_set_num_threads"):
+            try:
+                cdll.openblas_set_num_threads(c_n)
+            except Exception:
+                pass
+        for setter in ("MKL_Set_Num_Threads", "mkl_set_num_threads"):
+            if hasattr(cdll, setter):
+                try:
+                    getattr(cdll, setter)(c_n)
+                except Exception:
+                    pass
+        if hasattr(cdll, "omp_set_num_threads"):
+            try:
+                cdll.omp_set_num_threads(c_n)
+            except Exception:
+                pass
+
+def get_blas_num_threads() -> int | None:
+    """Get the currently configured number of BLAS threads if detectable."""
+    counts = _get_runtime_thread_counts()
+    if counts:
+        return next(iter(counts.values()))
+    for env in ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "OMP_NUM_THREADS"):
+        val = os.environ.get(env)
+        if val and val.isdigit():
+            return int(val)
+    return None
+
+@contextmanager
+def blas_threads(n: int):
+    """Context manager for temporarily setting BLAS threads."""
+    env_vars = ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "OMP_NUM_THREADS")
+    old_env = {v: os.environ.get(v) for v in env_vars}
+    prev_counts = _get_runtime_thread_counts()
+    set_blas_num_threads(n)
+    try:
+        yield
+    finally:
+        for runtime, prev_val in prev_counts.items():
+            c_val = ctypes.c_int(prev_val)
+            for cdll in _iter_blas_cdlls():
+                if runtime == "openblas" and hasattr(cdll, "openblas_set_num_threads"):
+                    try:
+                        cdll.openblas_set_num_threads(c_val)
+                    except Exception:
+                        pass
+                elif runtime == "mkl":
+                    for setter in ("MKL_Set_Num_Threads", "mkl_set_num_threads"):
+                        if hasattr(cdll, setter):
+                            try:
+                                getattr(cdll, setter)(c_val)
+                            except Exception:
+                                pass
+                elif runtime == "omp" and hasattr(cdll, "omp_set_num_threads"):
+                    try:
+                        cdll.omp_set_num_threads(c_val)
+                    except Exception:
+                        pass
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
 from kvxopt import solvers, blas, lapack
 
 __all__ = [ 'blas', 'lapack', 'amd', 'umfpack', 'klu', 'cholmod', 'solvers',
     'modeling', 'printing', 'info', 'matrix', 'spmatrix', 'sparse', 
     'spdiag', 'sqrt', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'conj',
     'exp', 'log', 'min', 'max', 'mul', 
-    'div', 'normal', 'uniform', 'setseed', 'getseed', 'norm']
+    'div', 'normal', 'uniform', 'setseed', 'getseed', 'norm',
+    'set_blas_num_threads', 'get_blas_num_threads', 'blas_threads']
 
 try:
     from ._version import version as __version__

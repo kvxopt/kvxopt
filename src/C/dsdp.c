@@ -498,18 +498,22 @@ static PyMethodDef dsdp_functions[] = {
 
 #if PY_MAJOR_VERSION >= 3
 
+KVXOPT_MODULE_SLOTS(dsdp)
+
 static PyModuleDef dsdp_module_def = {
     PyModuleDef_HEAD_INIT,
     "dsdp",
     dsdp__doc__,
     -1,
     dsdp_functions,
-    NULL, NULL, NULL, NULL
+    KVXOPT_SLOTS(dsdp),
+    NULL, NULL, NULL
 };
 
 PyMODINIT_FUNC PyInit_dsdp(void)
 {
   if (!(dsdp_module = PyModule_Create(&dsdp_module_def))) return NULL;
+  KVXOPT_SET_GIL_SLOT(dsdp_module);
   PyModule_AddObject(dsdp_module, "options", PyDict_New());
   if (import_kvxopt() < 0) return NULL;
   return dsdp_module;

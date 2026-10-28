@@ -1228,19 +1228,23 @@ static PyMethodDef fftw_functions[] = {
 
 #if PY_MAJOR_VERSION >= 3
 
+KVXOPT_MODULE_SLOTS(fftw)
+
 static PyModuleDef fftw_module = {
     PyModuleDef_HEAD_INIT,
     "fftw",
     fftw__doc__,
     -1,
     fftw_functions,
-    NULL, NULL, NULL, NULL
+    KVXOPT_SLOTS(fftw),
+    NULL, NULL, NULL
 };
 
 PyMODINIT_FUNC PyInit_fftw(void)
 {
   PyObject *m;
   if (!(m = PyModule_Create(&fftw_module))) return NULL;
+  KVXOPT_SET_GIL_SLOT(m);
   if (import_kvxopt() < 0) return NULL;
   return m;
 }

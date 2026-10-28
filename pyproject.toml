@@ -34,7 +34,7 @@ write_to = "src/python/_version.py"
 local_scheme = "no-local-version"
 
 [tool.cibuildwheel]
-build = "cp311-* cp312-* cp313-* cp314-* cp315-*"
+build = "cp311-* cp312-* cp313-* cp314-* cp314t-* cp315-* cp315t-*"
 skip = ["cp*-win32", "cp*-manylinux_i686"]
 test-requires = ["numpy", "pytest"]
 test-command = [

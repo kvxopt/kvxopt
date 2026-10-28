@@ -3876,19 +3876,23 @@ static PyMethodDef blas_functions[] = {
 
 #if PY_MAJOR_VERSION >= 3
 
+KVXOPT_MODULE_SLOTS(blas)
+
 static PyModuleDef blas_module = {
     PyModuleDef_HEAD_INIT,
     "blas",
     blas__doc__,
     -1,
     blas_functions,
-    NULL, NULL, NULL, NULL
+    KVXOPT_SLOTS(blas),
+    NULL, NULL, NULL
 };
 
 PyMODINIT_FUNC PyInit_blas(void)
 {
   PyObject *m;
   if (!(m = PyModule_Create(&blas_module))) return NULL;
+  KVXOPT_SET_GIL_SLOT(m);
   if (import_kvxopt() < 0) return NULL;
   return m;
 }

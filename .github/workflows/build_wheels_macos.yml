@@ -12,20 +12,16 @@ on:
 
 jobs:
   build_wheels:
-    name: Build on macOS ${{ matrix.macos_target }} (${{ matrix.arch }})
+    name: Build on macOS (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
-            platform: macos
-            arch: arm64
-            macos_target: 14.0
           - os: macos-15
             platform: macos
             arch: arm64
-            macos_target: 15.0
+            macos_target: 14.0
 
     steps:
       - name: Checkout kvxopt source
@@ -79,3 +75,4 @@ jobs:
         with:
           name: cibw-wheels-${{ matrix.os }}-${{ matrix.arch }}
           path: ./wheelhouse/*.whl
+          retention-days: 7

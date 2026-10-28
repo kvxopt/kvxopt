@@ -730,18 +730,21 @@ static PyMethodDef osqp_functions[] = {
     {NULL} /* Sentinel */
 };
 
+KVXOPT_MODULE_SLOTS(osqp)
+
 static PyModuleDef osqp_module_def = {PyModuleDef_HEAD_INIT,
                                       "osqp",
                                       osqp__doc__,
                                       -1,
                                       osqp_functions,
-                                      NULL,
+                                      KVXOPT_SLOTS(osqp),
                                       NULL,
                                       NULL,
                                       NULL};
 
 PyMODINIT_FUNC PyInit_osqp(void) {
     if (!(osqp_module = PyModule_Create(&osqp_module_def))) return NULL;
+    KVXOPT_SET_GIL_SLOT(osqp_module);
     PyModule_AddObject(osqp_module, "options", PyDict_New());
     if (import_kvxopt() < 0) return NULL;
     return osqp_module;

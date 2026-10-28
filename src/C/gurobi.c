@@ -697,12 +697,14 @@ static PyMethodDef gurobi_functions[] = {
     {NULL} /* Sentinel */
 };
 
+KVXOPT_MODULE_SLOTS(gurobi)
+
 static PyModuleDef gurobi_module_def = {PyModuleDef_HEAD_INIT,
                                         "gurobi",
                                         gurobi__doc__,
                                         -1,
                                         gurobi_functions,
-                                        NULL,
+                                        KVXOPT_SLOTS(gurobi),
                                         NULL,
                                         NULL,
                                         NULL};
@@ -712,6 +714,7 @@ PyMODINIT_FUNC PyInit_gurobi(void) {
     int_t error = 0;
 
     if (!(gurobi_module = PyModule_Create(&gurobi_module_def))) return NULL;
+    KVXOPT_SET_GIL_SLOT(gurobi_module);
     PyModule_AddObject(gurobi_module, "options", PyDict_New());
     if (import_kvxopt() < 0) return NULL;
 

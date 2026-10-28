@@ -2,6 +2,8 @@ name: Linux build
 on:
   push:
     branches: [ master, dev ]
+  pull_request:
+    branches: [ master, dev ]
 
 jobs:
   build:
@@ -16,9 +18,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.13', '3.14', '3.15']
+        python-version: ['3.11', '3.12', '3.13', '3.14', '3.14t', '3.15']
         suite-sparse: [lib_suitesparse, src_suitesparse]
         include:
+          - python-version: '3.14t'
+            allow-prerelease: true
           - python-version: '3.15'
             allow-prerelease: true
 
@@ -97,7 +101,7 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           files: ./coverage.xml
-          fail_ci_if_error: true
+          fail_ci_if_error: false
           flags: unittests
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: kvxopt/kvxopt

@@ -33,12 +33,73 @@ from __future__ import annotations
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import contextvars
+from collections.abc import MutableMapping
+from typing import Any, Iterator
 import kvxopt
 from kvxopt.cvxprog import cp, cpl, gp 
 from kvxopt.coneprog import conelp, lp, sdp, socp, coneqp, qp
-from typing import Any
 
-options: dict[str, Any] = {}
+_options_var: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
+    "_kvxopt_solver_options", default=None
+)
+
+class _ThreadSafeOptions(MutableMapping[str, Any]):
+    """Thread-safe context-local options dictionary for KVXOPT solvers."""
+
+    def _data(self) -> dict[str, Any]:
+        d = _options_var.get()
+        if d is None:
+            d = {}
+            _options_var.set(d)
+        return d
+
+    def __getitem__(self, key: str) -> Any:
+        return self._data()[key]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        d = dict(self._data())
+        d[key] = value
+        _options_var.set(d)
+
+    def __delitem__(self, key: str) -> None:
+        d = dict(self._data())
+        del d[key]
+        _options_var.set(d)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._data())
+
+    def __len__(self) -> int:
+        return len(self._data())
+
+    def copy(self) -> dict[str, Any]:
+        return self._data().copy()
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._data().get(key, default)
+
+    def setdefault(self, key: str, default: Any = None) -> Any:
+        d = dict(self._data())
+        val = d.setdefault(key, default)
+        _options_var.set(d)
+        return val
+
+    def update(self, *args: Any, **kwargs: Any) -> None:
+        d = dict(self._data())
+        d.update(*args, **kwargs)
+        _options_var.set(d)
+
+    def clear(self) -> None:
+        _options_var.set({})
+
+    def __repr__(self) -> str:
+        return repr(self._data())
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._data()
+
+options: MutableMapping[str, Any] = _ThreadSafeOptions()
 kvxopt.cvxprog.options = options
 kvxopt.coneprog.options = options
 __all__ = ['conelp', 'coneqp', 'lp', 'socp', 'sdp', 'qp', 'cp', 'cpl', 'gp']
