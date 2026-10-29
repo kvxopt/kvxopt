@@ -156,6 +156,7 @@ jobs:
         with:
           name: cibw-sdist
           path: dist/*.tar.gz
+          retention-days: 7
 
   upload_test_pypi:
     name: Upload to TestPyPI

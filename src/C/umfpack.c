@@ -37,7 +37,11 @@ const int E_SIZE[] = {sizeof(int_t), sizeof(double), sizeof(double complex)};
 const int E_SIZE[] = {sizeof(int_t), sizeof(double), sizeof(_Dcomplex)};
 #endif
 
-static char umfpack_error[40];
+static void set_umfpack_error(const char *msg, int status) {
+    char err_buf[64];
+    snprintf(err_buf, sizeof(err_buf), "%s %i", msg, status);
+    PyErr_SetString(PyExc_ValueError, err_buf);
+}
 
 const char *descrdFs = "UMFPACK SYM D FACTOR";
 const char *descrzFs = "UMFPACK SYM Z FACTOR";
@@ -129,12 +133,14 @@ static PyObject* linsolve(PyObject *self, PyObject *args,
     if (trans != 'N' && trans != 'T' && trans != 'C')
         err_char("trans", "'N', 'T', 'C'");
 
+    Py_BEGIN_ALLOW_THREADS
     if (SP_ID(A) == DOUBLE)
         UMFD(symbolic)(n, n, SP_COL(A), SP_ROW(A), SP_VAL(A), &symbolic,
             NULL, info);
     else
         UMFZ(symbolic)(n, n, SP_COL(A), SP_ROW(A), SP_VAL(A), NULL,
             &symbolic, NULL, info);
+    Py_END_ALLOW_THREADS
 
     if (info[UMFPACK_STATUS] != UMFPACK_OK){
         if (SP_ID(A) == DOUBLE)
@@ -144,13 +150,12 @@ static PyObject* linsolve(PyObject *self, PyObject *args,
         if (info[UMFPACK_STATUS] == UMFPACK_ERROR_out_of_memory)
             return PyErr_NoMemory();
         else {
-            snprintf(umfpack_error, 40,"%s %i","UMFPACK ERROR",
-                (int) info[UMFPACK_STATUS]);
-            PyErr_SetString(PyExc_ValueError, umfpack_error);
+            set_umfpack_error("UMFPACK ERROR", (int) info[UMFPACK_STATUS]);
             return NULL;
         }
     }
 
+    Py_BEGIN_ALLOW_THREADS
     if (SP_ID(A) == DOUBLE) {
         UMFD(numeric)(SP_COL(A), SP_ROW(A), SP_VAL(A), symbolic,
             &numeric, NULL, info);
@@ -160,6 +165,7 @@ static PyObject* linsolve(PyObject *self, PyObject *args,
             &numeric, NULL, info);
         UMFZ(free_symbolic)(&symbolic);
     }
+    Py_END_ALLOW_THREADS
     if (info[UMFPACK_STATUS] != UMFPACK_OK){
         if (SP_ID(A) == DOUBLE)
             UMFD(free_numeric)(&numeric);
@@ -172,9 +178,7 @@ static PyObject* linsolve(PyObject *self, PyObject *args,
                 PyErr_SetString(PyExc_ArithmeticError, "singular "
                     "matrix");
             else {
-                snprintf(umfpack_error, 40,"%s %i","UMFPACK ERROR",
-                    (int) info[UMFPACK_STATUS]);
-                PyErr_SetString(PyExc_ValueError, umfpack_error);
+                set_umfpack_error("UMFPACK ERROR", (int) info[UMFPACK_STATUS]);
             }
             return NULL;
         }
@@ -188,6 +192,7 @@ static PyObject* linsolve(PyObject *self, PyObject *args,
         return PyErr_NoMemory();
     }
     for (k=0; k<nrhs; k++){
+        Py_BEGIN_ALLOW_THREADS
         if (SP_ID(A) == DOUBLE)
             UMFD(solve)(trans == 'N' ? UMFPACK_A: UMFPACK_Aat,
                 SP_COL(A), SP_ROW(A), SP_VAL(A), x,
@@ -198,6 +203,7 @@ static PyObject* linsolve(PyObject *self, PyObject *args,
                 SP_VAL(A), NULL, x, NULL,
                 (double *)(MAT_BUFZ(B) + k*ldB + oB), NULL, numeric,
                 NULL, info);
+        Py_END_ALLOW_THREADS
         if (info[UMFPACK_STATUS] == UMFPACK_OK)
 	  memcpy((unsigned char*)B->buffer + (k*ldB + oB)*E_SIZE[SP_ID(A)], x,
                 n*E_SIZE[SP_ID(A)]);
@@ -218,9 +224,7 @@ static PyObject* linsolve(PyObject *self, PyObject *args,
                 PyErr_SetString(PyExc_ArithmeticError, "singular "
                     "matrix");
             else {
-                snprintf(umfpack_error, 40,"%s %i","UMFPACK ERROR",
-                    (int) info[UMFPACK_STATUS]);
-                PyErr_SetString(PyExc_ValueError, umfpack_error);
+                set_umfpack_error("UMFPACK ERROR", (int) info[UMFPACK_STATUS]);
             }
         return NULL;
         }
@@ -254,8 +258,10 @@ static PyObject* symbolic(PyObject *self, PyObject *args)
 
     switch (SP_ID(A)){
         case DOUBLE:
+            Py_BEGIN_ALLOW_THREADS
             UMFD(symbolic)(SP_NROWS(A), SP_NCOLS(A), SP_COL(A),
                 SP_ROW(A), SP_VAL(A), &symbolic, NULL, info);
+            Py_END_ALLOW_THREADS
             if (info[UMFPACK_STATUS] == UMFPACK_OK)
                 return (PyObject *) PyCapsule_New( (void *) symbolic,
                     descrdFs,
@@ -266,8 +272,10 @@ static PyObject* symbolic(PyObject *self, PyObject *args)
             break;
 
         case COMPLEX:
+            Py_BEGIN_ALLOW_THREADS
             UMFZ(symbolic)(SP_NROWS(A), SP_NCOLS(A), SP_COL(A),
                 SP_ROW(A), SP_VAL(A), NULL, &symbolic, NULL, info);
+            Py_END_ALLOW_THREADS
             if (info[UMFPACK_STATUS] == UMFPACK_OK)
                 return (PyObject *) PyCapsule_New(
                     (void *) symbolic, descrzFs,
@@ -281,9 +289,7 @@ static PyObject* symbolic(PyObject *self, PyObject *args)
     if (info[UMFPACK_STATUS] == UMFPACK_ERROR_out_of_memory)
         return PyErr_NoMemory();
     else {
-        snprintf(umfpack_error, 40,"%s %i","UMFPACK ERROR",
-            (int) info[UMFPACK_STATUS]);
-        PyErr_SetString(PyExc_ValueError, umfpack_error);
+        set_umfpack_error("UMFPACK ERROR", (int) info[UMFPACK_STATUS]);
         return NULL;
     }
 }
@@ -322,8 +328,10 @@ static PyObject* numeric(PyObject *self, PyObject *args)
                 "factor of a 'd' matrix");
             if (!(Fsptr = (void *) PyCapsule_GetPointer(Fs, descrdFs)))
                 err_CO("Fs");
+            Py_BEGIN_ALLOW_THREADS
             UMFD(numeric)(SP_COL(A), SP_ROW(A), SP_VAL(A), Fsptr, &numeric,
                 NULL, info);
+            Py_END_ALLOW_THREADS
 
             if (info[UMFPACK_STATUS] == UMFPACK_OK)
                 return (PyObject *) PyCapsule_New(
@@ -339,8 +347,10 @@ static PyObject* numeric(PyObject *self, PyObject *args)
                 "factor of a 'z' matrix");
             if (!(Fsptr = (void *) PyCapsule_GetPointer(Fs, descrzFs)))
                 err_CO("Fs");
+            Py_BEGIN_ALLOW_THREADS
             UMFZ(numeric)(SP_COL(A), SP_ROW(A), SP_VAL(A), NULL, Fsptr,
                 &numeric, NULL, info);
+            Py_END_ALLOW_THREADS
 
             if (info[UMFPACK_STATUS] == UMFPACK_OK)
                 return (PyObject *) PyCapsule_New(
@@ -358,9 +368,7 @@ static PyObject* numeric(PyObject *self, PyObject *args)
         if (info[UMFPACK_STATUS] == UMFPACK_WARNING_singular_matrix)
 	    PyErr_SetString(PyExc_ArithmeticError, "singular matrix");
         else {
-	    snprintf(umfpack_error, 40,"%s %i","UMFPACK ERROR",
-	        (int) info[UMFPACK_STATUS]);
-	    PyErr_SetString(PyExc_ValueError, umfpack_error);
+	    set_umfpack_error("UMFPACK ERROR", (int) info[UMFPACK_STATUS]);
         }
         return NULL;
     }
@@ -425,9 +433,7 @@ static PyObject* get_numeric(PyObject *self, PyObject *args, PyObject *kwrds)
     }
 
     if (status < 0){
-        snprintf(umfpack_error, 40,"%s %i","Extracting LUnz factors failed",
-        (int) status);
-        PyErr_SetString(PyExc_ValueError, umfpack_error);
+        set_umfpack_error("Extracting LUnz factors failed", (int) status);
         return NULL;
     }
     Ltp = (int_t *) malloc ((n_row+1) * sizeof (int_t));
@@ -483,9 +489,7 @@ static PyObject* get_numeric(PyObject *self, PyObject *args, PyObject *kwrds)
         free(Pt);
         free(Qt);
         // TODO: Free R, U??
-        snprintf(umfpack_error, 40,"%s %i","Extracting LU factors failed",
-        (int) status);
-        PyErr_SetString(PyExc_ValueError, umfpack_error);
+        set_umfpack_error("Extracting LU factors failed", (int) status);
         return NULL;
     }
 
@@ -538,9 +542,7 @@ static PyObject* get_numeric(PyObject *self, PyObject *args, PyObject *kwrds)
 
     if (status < 0){
         // TODO: Free L, U, P, Q, R?
-        snprintf(umfpack_error, 40,"%s %i","Transposing L failed",
-        (int) status);
-        PyErr_SetString(PyExc_ValueError, umfpack_error);
+        set_umfpack_error("Transposing L failed", (int) status);
         return NULL;
     }
 
@@ -626,6 +628,7 @@ static PyObject* solve(PyObject *self, PyObject *args, PyObject *kwrds)
     if (!(x = malloc(n*E_SIZE[SP_ID(A)]))) return PyErr_NoMemory();
 
     for (k=0; k<nrhs; k++) {
+        Py_BEGIN_ALLOW_THREADS
         if (SP_ID(A) == DOUBLE)
             UMFD(solve)(trans == 'N' ? UMFPACK_A : UMFPACK_Aat,
                 SP_COL(A), SP_ROW(A), SP_VAL(A), x,
@@ -638,6 +641,7 @@ static PyObject* solve(PyObject *self, PyObject *args, PyObject *kwrds)
                 SP_VAL(A), NULL, x, NULL,
                 (double *)(MAT_BUFZ(B) + k*ldB + oB), NULL,
                 (void *) PyCapsule_GetPointer(F, descrzFn), NULL, info);
+        Py_END_ALLOW_THREADS
 
         if (info[UMFPACK_STATUS] == UMFPACK_OK)
 	    memcpy((unsigned char*)B->buffer + (k*ldB + oB)*E_SIZE[SP_ID(A)], x,
@@ -655,9 +659,7 @@ static PyObject* solve(PyObject *self, PyObject *args, PyObject *kwrds)
                 PyErr_SetString(PyExc_ArithmeticError,
                     "singular matrix");
             else {
-                snprintf(umfpack_error, 40,"%s %i","UMFPACK ERROR",
-                    (int) info[UMFPACK_STATUS]);
-                PyErr_SetString(PyExc_ValueError, umfpack_error);
+                set_umfpack_error("UMFPACK ERROR", (int) info[UMFPACK_STATUS]);
             }
             return NULL;
         }
@@ -711,9 +713,7 @@ static PyObject* get_det(PyObject *self, PyObject *args, PyObject *kwrds) {
     }
 
     if (status < 0){
-        snprintf(umfpack_error, 40,"%s %i","UMFPACK ERROR",
-                (int) info[UMFPACK_STATUS]);
-        PyErr_SetString(PyExc_ValueError, umfpack_error);
+        set_umfpack_error("UMFPACK ERROR", (int) info[UMFPACK_STATUS]);
         return NULL;
     }
 
@@ -736,19 +736,23 @@ static PyMethodDef umfpack_functions[] = {
     {NULL}  /* Sentinel */
 };
 
+KVXOPT_MODULE_SLOTS(umfpack)
+
 static PyModuleDef umfpack_module = {
     PyModuleDef_HEAD_INIT,
     "umfpack",
     umfpack__doc__,
     -1,
     umfpack_functions,
-    NULL, NULL, NULL, NULL
+    KVXOPT_SLOTS(umfpack),
+    NULL, NULL, NULL
 };
 
 PyMODINIT_FUNC PyInit_umfpack(void)
 {
   PyObject *m;
   if (!(m = PyModule_Create(&umfpack_module))) return NULL;
+  KVXOPT_SET_GIL_SLOT(m);
   if (import_kvxopt() < 0) return NULL;
   return m;
 }

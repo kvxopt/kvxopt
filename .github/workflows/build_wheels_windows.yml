@@ -63,6 +63,8 @@ jobs:
         uses: pypa/cibuildwheel@v4.2.1
         env:
           CIBW_ARCHS_WINDOWS: ${{ matrix.arch }}
+          # GIL-enabled cp311–cp315 and free-threaded cp314t/cp315t.
+          CIBW_BUILD: "cp311-* cp312-* cp313-* cp314-* cp314t-* cp315-* cp315t-*"
           SETUPTOOLS_SCM_PRETEND_VERSION: ${{ inputs.scm_version }}
 
           CIBW_ENVIRONMENT_WINDOWS: >
@@ -100,3 +102,4 @@ jobs:
         with:
           name: cibw-wheels-${{ matrix.os }}-${{ matrix.arch }}
           path: ./wheelhouse/*.whl
+          retention-days: 7

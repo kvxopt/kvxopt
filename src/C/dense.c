@@ -1339,11 +1339,18 @@ matrix_set_size(matrix *self, PyObject *value, void *closure)
   if (m<0 || n<0)
     PY_ERR_INT(PyExc_TypeError, "dimensions must be non-negative");
 
+  if (self->ob_exports > 0)
+    PY_ERR_INT(PyExc_BufferError, "cannot resize matrix with active buffer exports");
+
   if (m*n != MAT_LGT(self))
     PY_ERR_INT(PyExc_TypeError, "number of elements in matrix cannot change");
 
   MAT_NROWS(self) = m;
   MAT_NCOLS(self) = n;
+  self->shape[0] = m;
+  self->shape[1] = n;
+  self->strides[0] = E_SIZE[self->id];
+  self->strides[1] = m * E_SIZE[self->id];
 
   return 0;
 }
@@ -1373,8 +1380,6 @@ matrix_buffer_getbuf(matrix *self, Py_buffer *view, int flags)
   if (flags & PyBUF_STRIDES) {
     view->len = MAT_LGT(self)*E_SIZE[self->id];
     view->itemsize = E_SIZE[self->id];
-    self->strides[0] = view->itemsize;
-    self->strides[1] = self->nrows*view->itemsize;
     view->strides = self->strides;
   }
   else PY_ERR_INT(PyExc_TypeError, "stride-less requests not supported");
@@ -1383,14 +1388,13 @@ matrix_buffer_getbuf(matrix *self, Py_buffer *view, int flags)
   view->readonly = 0;
   view->suboffsets = NULL;
   view->ndim = 2;  
-  self->shape[0] = self->nrows; self->shape[1] = self->ncols;
   view->shape = self->shape;
 
   view->obj = (PyObject*)self;
   view->internal = NULL;
 
   Py_INCREF(self);
-  self->ob_exports++;
+  KVXOPT_ATOMIC_INC(self->ob_exports);
 
   return 0;
 }
@@ -1398,7 +1402,7 @@ matrix_buffer_getbuf(matrix *self, Py_buffer *view, int flags)
 static void
 matrix_buffer_relbuf(matrix *self, Py_buffer *view)
 {
-  self->ob_exports--;
+  KVXOPT_ATOMIC_DEC(self->ob_exports);
 }
 
 static PyBufferProcs matrix_as_buffer = {

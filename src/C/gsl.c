@@ -32,9 +32,9 @@
 
 PyDoc_STRVAR(gsl__doc__,"Random Module.");
 
-static unsigned long seed = 0;
-static const gsl_rng_type *rng_type;
-static gsl_rng *rng;
+static KVXOPT_THREAD_LOCAL unsigned long seed = 0;
+static KVXOPT_THREAD_LOCAL const gsl_rng_type *rng_type = NULL;
+static KVXOPT_THREAD_LOCAL gsl_rng *rng = NULL;
 
 #define CHECK_INPUT_AND_GSL_SETUP {                                            \
     if ((nrows < 0) || (ncols < 0))                                            \
@@ -46,8 +46,9 @@ static gsl_rng *rng;
     if (!(obj = Matrix_New(nrows, ncols, DOUBLE)))                             \
       return NULL;                                                             \
                                                                                \
-    gsl_rng_env_setup();                                                       \
-    rng_type = gsl_rng_default;                                                \
+    /* rng type is fixed in module init; seed and rng stay thread-local. */   \
+    if (rng_type == NULL)                                                      \
+        rng_type = gsl_rng_default;                                            \
     rng = gsl_rng_alloc(rng_type);                                             \
     gsl_rng_set(rng, seed);                                                    \
 }
@@ -120,6 +121,7 @@ normal(PyObject *self, PyObject *args, PyObject *kwrds)
 
   seed = gsl_rng_get (rng);
   gsl_rng_free(rng);
+  rng = NULL;
 
   return (PyObject *)obj;
 }
@@ -158,6 +160,7 @@ uniform(PyObject *self, PyObject *args, PyObject *kwrds)
 
   seed = gsl_rng_get (rng);
   gsl_rng_free(rng);
+  rng = NULL;
 
   return (PyObject *)obj;
 }
@@ -197,6 +200,7 @@ weibull(PyObject *self, PyObject *args, PyObject *kwrds)
 
   seed = gsl_rng_get(rng);
   gsl_rng_free(rng);
+  rng = NULL;
 
   return (PyObject *)obj;
 }
@@ -210,19 +214,25 @@ static PyMethodDef gsl_functions[] = {
     {NULL} /* Sentinel */
 };
 
+KVXOPT_MODULE_SLOTS(gsl)
+
 static PyModuleDef gsl_module = {
     PyModuleDef_HEAD_INIT,
     "gsl",
     gsl__doc__,
     -1,
     gsl_functions,
-    NULL, NULL, NULL, NULL
+    KVXOPT_SLOTS(gsl),
+    NULL, NULL, NULL
 };
 
 PyMODINIT_FUNC PyInit_gsl(void)
 {
   PyObject *m;
   if (!(m = PyModule_Create(&gsl_module))) return NULL;
+  KVXOPT_SET_GIL_SLOT(m);
+  /* One-time setup: gsl_rng_env_setup writes process-global RNG state. */
+  gsl_rng_env_setup();
   if (import_kvxopt() < 0) return NULL;
   return m;
 }

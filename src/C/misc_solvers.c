@@ -1174,19 +1174,23 @@ static PyMethodDef misc_solvers_functions[] = {
 
 #if PY_MAJOR_VERSION >= 3
 
+KVXOPT_MODULE_SLOTS(misc_solvers)
+
 static PyModuleDef misc_solvers_module = {
     PyModuleDef_HEAD_INIT,
     "misc_solvers",
     misc_solvers__doc__,
     -1,
     misc_solvers_functions,
-    NULL, NULL, NULL, NULL
+    KVXOPT_SLOTS(misc_solvers),
+    NULL, NULL, NULL
 };
 
 PyMODINIT_FUNC PyInit_misc_solvers(void)
 {
   PyObject *m;
   if (!(m = PyModule_Create(&misc_solvers_module))) return NULL;
+  KVXOPT_SET_GIL_SLOT(m);
   if (import_kvxopt() < 0) return NULL;
   return m;
 }

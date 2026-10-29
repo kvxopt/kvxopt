@@ -82,7 +82,17 @@ PyDoc_STRVAR(cholmod__doc__, "Interface to the CHOLMOD library.\n\n"
 "CHOLMOD is available from www.suitesparse.com.");
 
 static PyObject *cholmod_module;
-static cholmod_common Common;
+static KVXOPT_THREAD_LOCAL cholmod_common Common;
+static KVXOPT_THREAD_LOCAL int Common_started = 0;
+
+static int ensure_cholmod_started(void)
+{
+    if (!Common_started) {
+        if (!CHOL(start)(&Common)) return 0;
+        Common_started = 1;
+    }
+    return 1;
+}
 
 static int set_options(void)
 {
@@ -90,6 +100,10 @@ static int set_options(void)
     PyObject *param, *key, *value;
     char err_str[100];
 
+    if (!ensure_cholmod_started()) {
+        PyErr_SetString(PyExc_RuntimeError, "failed to start CHOLMOD");
+        return 0;
+    }
 
     CHOL(defaults)(&Common);
     Common.print = 0;
@@ -204,13 +218,17 @@ static void free_matrix(cholmod_sparse *A)
 {
     A->x = NULL;
     A->i = NULL;
+    ensure_cholmod_started();
     CHOL(free_sparse)(&A, &Common);
 }
 
 static void kvxopt_free_cholmod_factor(void *L)
 {
    void *Lptr = PyCapsule_GetPointer(L, PyCapsule_GetName(L));
-   CHOL(free_factor) ((cholmod_factor **) &Lptr, &Common);
+   if (Lptr) {
+       ensure_cholmod_started();
+       CHOL(free_factor) ((cholmod_factor **) &Lptr, &Common);
+   }
 }
 
 
@@ -271,8 +289,10 @@ static PyObject* symbolic(PyObject *self, PyObject *args,
     }
     if (uplo != 'U' && uplo != 'L') err_char("uplo", "'L', 'U'");
     if (!(Ac = pack(A, uplo))) return PyErr_NoMemory();
+    Py_BEGIN_ALLOW_THREADS
     L = CHOL(analyze_p)(Ac, P ? MAT_BUFI(P): NULL, NULL, 0, &Common);
     CHOL(free_sparse)(&Ac, &Common);
+    Py_END_ALLOW_THREADS
 
     if (Common.status != CHOLMOD_OK){
         if (Common.status == CHOLMOD_OUT_OF_MEMORY)
@@ -359,9 +379,11 @@ static PyObject* numeric(PyObject *self, PyObject *args)
 
     if (!(Ac = pack(A, uplo))) return PyErr_NoMemory();
     status = Common.status;
+    Py_BEGIN_ALLOW_THREADS
     CHOL(factorize) (Ac, Lc, &Common);
     CHOL(free_sparse)(&Ac, &Common);
     CHOL(finish)(&Common);
+    Py_END_ALLOW_THREADS
 
     if (status < 0) switch (status) {
         case CHOLMOD_OUT_OF_MEMORY:
@@ -480,7 +502,9 @@ static PyObject* solve(PyObject *self, PyObject *args, PyObject *kwrds)
     void *b_old = b->x;
     for (i=0; i<nrhs; i++){
         b->x = (unsigned char*)MAT_BUF(B) + (i*ldB + oB)*E_SIZE[MAT_ID(B)];
+        Py_BEGIN_ALLOW_THREADS
         x = CHOL(solve) (sysvalues[sys], L, b, &Common);
+        Py_END_ALLOW_THREADS
         if (Common.status != CHOLMOD_OK){
             PyErr_SetString(PyExc_ValueError, "solve step failed");
             CHOL(free_dense)(&x, &Common);
@@ -564,7 +588,9 @@ static PyObject* spsolve(PyObject *self, PyObject *args,
         PY_ERR(PyExc_ValueError, "incompatible dimensions for B");
 
     if (!(Bc = create_matrix(B))) return PyErr_NoMemory();
+    Py_BEGIN_ALLOW_THREADS
     Xc = CHOL(spsolve)(sysvalues[sys], L, Bc, &Common);
+    Py_END_ALLOW_THREADS
     free_matrix(Bc);
     if (Common.status == CHOLMOD_OUT_OF_MEMORY) return PyErr_NoMemory();
     if (Common.status != CHOLMOD_OK)
@@ -660,7 +686,9 @@ static PyObject* linsolve(PyObject *self, PyObject *args,
     if (uplo != 'U' && uplo != 'L') err_char("uplo", "'L', 'U'");
 
     if (!(Ac = pack(A, uplo))) return PyErr_NoMemory();
+    Py_BEGIN_ALLOW_THREADS
     L = CHOL(analyze_p)(Ac, P ? MAT_BUFI(P): NULL, NULL, 0, &Common);
+    Py_END_ALLOW_THREADS
     if (Common.status != CHOLMOD_OK){
         free_matrix(Ac);
         CHOL(free_sparse)(&Ac, &Common);
@@ -674,8 +702,10 @@ static PyObject* linsolve(PyObject *self, PyObject *args,
             return NULL;
         }
     }
+    Py_BEGIN_ALLOW_THREADS
     CHOL(factorize) (Ac, L, &Common);
     CHOL(free_sparse)(&Ac, &Common);
+    Py_END_ALLOW_THREADS
     if (Common.status < 0) {
         CHOL(free_factor)(&L, &Common);
         switch (Common.status) {
@@ -732,7 +762,9 @@ static PyObject* linsolve(PyObject *self, PyObject *args,
     b_old = b->x;
     for (i=0; i<nrhs; i++) {
         b->x = (unsigned char*)MAT_BUF(B) + (i*ldB + oB)*E_SIZE[MAT_ID(B)];
+        Py_BEGIN_ALLOW_THREADS
         x = CHOL(solve) (CHOLMOD_A, L, b, &Common);
+        Py_END_ALLOW_THREADS
         if (Common.status != CHOLMOD_OK){
             PyErr_SetString(PyExc_ValueError, "solve step failed");
             CHOL(free_factor)(&L, &Common);
@@ -808,7 +840,9 @@ static PyObject* splinsolve(PyObject *self, PyObject *args,
     if (uplo != 'U' && uplo != 'L') err_char("uplo", "'L', 'U'");
     if (!(Ac = pack(A, uplo))) return PyErr_NoMemory();
 
+    Py_BEGIN_ALLOW_THREADS
     L = CHOL(analyze_p) (Ac, P ? MAT_BUFI(P): NULL, NULL, 0, &Common);
+    Py_END_ALLOW_THREADS
     if (Common.status != CHOLMOD_OK){
         CHOL(free_factor)(&L, &Common);
         CHOL(free_sparse)(&Ac, &Common);
@@ -821,8 +855,10 @@ static PyObject* splinsolve(PyObject *self, PyObject *args,
         }
     }
 
+    Py_BEGIN_ALLOW_THREADS
     CHOL(factorize) (Ac, L, &Common);
     CHOL(free_sparse)(&Ac, &Common);
+    Py_END_ALLOW_THREADS
     if (Common.status > 0) switch (Common.status) {
         case CHOLMOD_NOT_POSDEF:
             PyErr_SetObject(PyExc_ArithmeticError, Py_BuildValue("i",
@@ -855,7 +891,9 @@ static PyObject* splinsolve(PyObject *self, PyObject *args,
       return PyErr_NoMemory();
     }
 
+    Py_BEGIN_ALLOW_THREADS
     Xc = CHOL(spsolve)(0, L, Bc, &Common);
+    Py_END_ALLOW_THREADS
     free_matrix(Bc);
     CHOL(free_factor)(&L, &Common);
     if (Common.status != CHOLMOD_OK){
@@ -1004,20 +1042,24 @@ static PyMethodDef cholmod_functions[] = {
   {NULL}  /* Sentinel */
 };
 
+KVXOPT_MODULE_SLOTS(cholmod)
+
 static PyModuleDef cholmod_module_def = {
     PyModuleDef_HEAD_INIT,
     "cholmod",
     cholmod__doc__,
     -1,
     cholmod_functions,
-    NULL, NULL, NULL, NULL
+    KVXOPT_SLOTS(cholmod),
+    NULL, NULL, NULL
 };
 
 PyMODINIT_FUNC PyInit_cholmod(void)
 {
-    CHOL(start) (&Common);
+    ensure_cholmod_started();
     if (!(cholmod_module = PyModule_Create(&cholmod_module_def)))
         return NULL;
+    KVXOPT_SET_GIL_SLOT(cholmod_module);
     PyModule_AddObject(cholmod_module, "options", PyDict_New());
     if (import_kvxopt() < 0) return NULL;
     return cholmod_module;

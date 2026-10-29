@@ -1,3 +1,4 @@
+from collections.abc import MutableMapping
 from typing import TypeAlias
 
 from ._types import OptionValue, SolverStatus
@@ -16,7 +17,7 @@ SolverValue: TypeAlias = (
 )
 SolverResult: TypeAlias = dict[str, SolverValue]
 
-options: dict[str, OptionValue]
+options: MutableMapping[str, OptionValue]
 
 
 def conelp(*args: matrix | spmatrix | float | int | str, **kwargs: matrix | spmatrix | float | int | str | dict[str, OptionValue]) -> SolverResult: ...

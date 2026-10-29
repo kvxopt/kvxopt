@@ -7404,19 +7404,23 @@ static PyMethodDef lapack_functions[] = {
 
 #if PY_MAJOR_VERSION >= 3
 
+KVXOPT_MODULE_SLOTS(lapack)
+
 static PyModuleDef lapack_module = {
     PyModuleDef_HEAD_INIT,
     "lapack",
     lapack__doc__,
     -1,
     lapack_functions,
-    NULL, NULL, NULL, NULL
+    KVXOPT_SLOTS(lapack),
+    NULL, NULL, NULL
 };
 
 PyMODINIT_FUNC PyInit_lapack(void)
 {
     PyObject *m;
     if (!(m = PyModule_Create(&lapack_module))) return NULL;
+    KVXOPT_SET_GIL_SLOT(m);
     if (import_kvxopt() < 0) return NULL;
     return m;
 }

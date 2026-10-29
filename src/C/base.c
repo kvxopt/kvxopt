@@ -2121,13 +2121,16 @@ static PyMethodDef base_functions[] = {
 
 #if PY_MAJOR_VERSION >= 3
 
+KVXOPT_MODULE_SLOTS(base)
+
 static PyModuleDef base_module = {
     PyModuleDef_HEAD_INIT,
     "base",
     base__doc__,
     -1,
     base_functions,
-    NULL, NULL, NULL, NULL
+    KVXOPT_SLOTS(base),
+    NULL, NULL, NULL
 };
 #define INITERROR return NULL
 PyMODINIT_FUNC PyInit_base(void)
@@ -2149,6 +2152,7 @@ PyMODINIT_FUNC initbase(void)
   if (!(base_mod = Py_InitModule3("base", base_functions, base__doc__)))
 #endif
     INITERROR;
+  KVXOPT_SET_GIL_SLOT(base_mod);
 
   /* for MS VC++ compatibility */
   matrix_tp.tp_alloc = PyType_GenericAlloc;

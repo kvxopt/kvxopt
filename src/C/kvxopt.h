@@ -47,6 +47,41 @@
 
 #define int_t     Py_ssize_t
 
+#if defined(_MSC_VER)
+  #define KVXOPT_THREAD_LOCAL __declspec(thread)
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
+  #define KVXOPT_THREAD_LOCAL _Thread_local
+#elif defined(__GNUC__) || defined(__clang__)
+  #define KVXOPT_THREAD_LOCAL __thread
+#else
+  #define KVXOPT_THREAD_LOCAL
+#endif
+
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_ATOMICS__)
+#include <stdatomic.h>
+#define KVXOPT_ATOMIC_INC(var) atomic_fetch_add((_Atomic(int_t)*)&(var), 1)
+#define KVXOPT_ATOMIC_DEC(var) atomic_fetch_sub((_Atomic(int_t)*)&(var), 1)
+#elif defined(_MSC_VER)
+#include <intrin.h>
+#define KVXOPT_ATOMIC_INC(var) _InterlockedIncrement64((volatile __int64 *)&(var))
+#define KVXOPT_ATOMIC_DEC(var) _InterlockedDecrement64((volatile __int64 *)&(var))
+#elif defined(__GNUC__) || defined(__clang__)
+#define KVXOPT_ATOMIC_INC(var) __atomic_fetch_add(&(var), 1, __ATOMIC_SEQ_CST)
+#define KVXOPT_ATOMIC_DEC(var) __atomic_fetch_sub(&(var), 1, __ATOMIC_SEQ_CST)
+#else
+#define KVXOPT_ATOMIC_INC(var) ((var)++)
+#define KVXOPT_ATOMIC_DEC(var) ((var)--)
+#endif
+
+#define KVXOPT_MODULE_SLOTS(name)
+#define KVXOPT_SLOTS(name) NULL
+
+#if !defined(Py_LIMITED_API) && defined(Py_GIL_DISABLED)
+#define KVXOPT_SET_GIL_SLOT(mod) do { if (mod) PyUnstable_Module_SetGIL((mod), Py_MOD_GIL_NOT_USED); } while (0)
+#else
+#define KVXOPT_SET_GIL_SLOT(mod) ((void)0)
+#endif
+
 typedef struct {
   PyObject_HEAD
   void *buffer;          /* in column-major-mode array of type 'id' */

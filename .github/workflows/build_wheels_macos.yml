@@ -12,16 +12,12 @@ on:
 
 jobs:
   build_wheels:
-    name: Build on macOS ${{ matrix.macos_target }} (${{ matrix.arch }})
+    name: Build on macOS (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
-            platform: macos
-            arch: arm64
-            macos_target: 14.0
           - os: macos-15
             platform: macos
             arch: arm64
@@ -64,6 +60,8 @@ jobs:
         uses: pypa/cibuildwheel@v4.2.1
         env:
           CIBW_ARCHS_MACOS: ${{ matrix.arch }}
+          # GIL-enabled cp311–cp315 and free-threaded cp314t/cp315t.
+          CIBW_BUILD: "cp311-* cp312-* cp313-* cp314-* cp314t-* cp315-* cp315t-*"
           SETUPTOOLS_SCM_PRETEND_VERSION: ${{ inputs.scm_version }}
 
           CIBW_ENVIRONMENT_MACOS: >
@@ -79,3 +77,4 @@ jobs:
         with:
           name: cibw-wheels-${{ matrix.os }}-${{ matrix.arch }}
           path: ./wheelhouse/*.whl
+          retention-days: 7

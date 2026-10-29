@@ -1002,18 +1002,22 @@ static PyMethodDef glpk_functions[] = {
     {NULL}  /* Sentinel */
 };
 
+KVXOPT_MODULE_SLOTS(glpk)
+
 static PyModuleDef glpk_module_def = {
     PyModuleDef_HEAD_INIT,
     "glpk",
     glpk__doc__,
     -1,
     glpk_functions,
-    NULL, NULL, NULL, NULL
+    KVXOPT_SLOTS(glpk),
+    NULL, NULL, NULL
 };
 
 PyMODINIT_FUNC PyInit_glpk(void)
 {
   if (!(glpk_module = PyModule_Create(&glpk_module_def))) return NULL;
+  KVXOPT_SET_GIL_SLOT(glpk_module);
   PyModule_AddObject(glpk_module, "options", PyDict_New());
   if (import_kvxopt() < 0) return NULL;
   return glpk_module;

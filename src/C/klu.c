@@ -38,7 +38,11 @@ const char *descrzFs = "KLU SYM Z FACTOR";
 const char *descrdFn = "KLU NUM D FACTOR";
 const char *descrzFn = "KLU NUM Z FACTOR";
 
-static char klu_error[20];
+static void set_klu_error(int status) {
+    char err_buf[64];
+    snprintf(err_buf, sizeof(err_buf), "KLU ERROR %i", status);
+    PyErr_SetString(PyExc_ValueError, err_buf);
+}
 
 PyDoc_STRVAR(klu__doc__, "Interface to the KLU library.\n\n"
              "Routines for symbolic and numeric LU factorization of sparse\n"
@@ -139,7 +143,9 @@ static PyObject* linsolve(PyObject *self, PyObject *args,
 
     // Symbolic factorization
 
+    Py_BEGIN_ALLOW_THREADS
     Symbolic = KLUD(analyze)(n, SP_COL(A), SP_ROW(A), &Common);
+    Py_END_ALLOW_THREADS
 
     if (Common.status != KLU_OK) {
         KLUD(free_symbolic)(&Symbolic, &CommonFree);
@@ -147,19 +153,19 @@ static PyObject* linsolve(PyObject *self, PyObject *args,
         if (Common.status == KLU_OUT_OF_MEMORY)
             return PyErr_NoMemory();
         else {
-            snprintf(klu_error, 20, "%s %i", "KLU ERROR",
-                     (int) Common.status);
-            PyErr_SetString(PyExc_ValueError, klu_error);
+            set_klu_error((int) Common.status);
             return NULL;
         }
     }
 
     // Numeric factorization
 
+    Py_BEGIN_ALLOW_THREADS
     if (SP_ID(A) == DOUBLE)
         Numeric = KLUD(factor)(SP_COL(A), SP_ROW(A), SP_VAL(A), Symbolic, &Common);
     else
         Numeric = KLUZ(factor)(SP_COL(A), SP_ROW(A), SP_VAL(A), Symbolic, &Common);
+    Py_END_ALLOW_THREADS
 
     if (Common.status != KLU_OK) {
         KLUD(free_symbolic)(&Symbolic, &CommonFree);
@@ -175,15 +181,14 @@ static PyObject* linsolve(PyObject *self, PyObject *args,
             if (Common.status == KLU_SINGULAR)
                 PyErr_SetString(PyExc_ArithmeticError, "singular matrix");
             else {
-                snprintf(klu_error, 20, "%s %i", "KLU ERROR",
-                         (int) Common.status);
-                PyErr_SetString(PyExc_ValueError, klu_error);
+                set_klu_error((int) Common.status);
             }
             return NULL;
         }
     }
 
 
+    Py_BEGIN_ALLOW_THREADS
     if (SP_ID(A) == DOUBLE) {
         if (trans == 'N')
             KLUD(solve)(Symbolic, Numeric, n, nrhs, MAT_BUFD(B), &Common);
@@ -198,6 +203,7 @@ static PyObject* linsolve(PyObject *self, PyObject *args,
             KLUZ(tsolve)(Symbolic, Numeric, n, nrhs, (double *) MAT_BUFZ(B),
                          trans == 'C' ? 1 : 0, &Common);
     }
+    Py_END_ALLOW_THREADS
 
 
     if (Common.status != KLU_OK) {
@@ -214,9 +220,7 @@ static PyObject* linsolve(PyObject *self, PyObject *args,
                 PyErr_SetString(PyExc_ArithmeticError, "singular "
                                 "matrix");
             else {
-                snprintf(klu_error, 20, "%s %i", "KLU ERROR",
-                         (int) Common.status);
-                PyErr_SetString(PyExc_ValueError, klu_error);
+                set_klu_error((int) Common.status);
             }
             return NULL;
         }
@@ -261,7 +265,9 @@ static PyObject* symbolic(PyObject *self, PyObject *args)
     KLUD(defaults)(&Common);
     KLUD(defaults)(&CommonFree);
 
+    Py_BEGIN_ALLOW_THREADS
     Symbolic = KLUD(analyze)(n, SP_COL(A), SP_ROW(A), &Common);
+    Py_END_ALLOW_THREADS
     if (Common.status == KLU_OK) {
         /* Symbolic is the same for DOUBLE and COMPLEX cases. Only make
          * difference in the Capsule descriptor to avoid user errors
@@ -283,9 +289,7 @@ static PyObject* symbolic(PyObject *self, PyObject *args)
     if (Common.status == KLU_OUT_OF_MEMORY)
         return PyErr_NoMemory();
     else {
-        snprintf(klu_error, 20, "%s %i", "KLU ERROR",
-                 (int) Common.status);
-        PyErr_SetString(PyExc_ValueError, klu_error);
+        set_klu_error((int) Common.status);
         return NULL;
     }
 }
@@ -334,7 +338,9 @@ static PyObject* numeric(PyObject *self, PyObject *args, PyObject *kwrds)
         if (!(Fsptr = (KLU(symbolic) *) PyCapsule_GetPointer(Fs, descrdFs)))
             err_CO("Fs");
 
+        Py_BEGIN_ALLOW_THREADS
         Numeric = KLUD(factor)(SP_COL(A), SP_ROW(A), SP_VAL(A), Fsptr, &Common);
+        Py_END_ALLOW_THREADS
 
         if (Common.status == KLU_OK)
             return (PyObject *) PyCapsule_New(
@@ -352,7 +358,9 @@ static PyObject* numeric(PyObject *self, PyObject *args, PyObject *kwrds)
             err_CO("Fs");
 
 
+        Py_BEGIN_ALLOW_THREADS
         Numeric = KLUZ(factor)(SP_COL(A), SP_ROW(A), SP_VAL(A), Fsptr, &Common);
+        Py_END_ALLOW_THREADS
 
         if (Common.status == KLU_OK)
             return (PyObject *) PyCapsule_New(
@@ -370,9 +378,7 @@ static PyObject* numeric(PyObject *self, PyObject *args, PyObject *kwrds)
         if (Common.status == KLU_SINGULAR)
             PyErr_SetString(PyExc_ArithmeticError, "singular matrix");
         else {
-            snprintf(klu_error, 20, "%s %i", "KLU ERROR",
-                     (int) Common.status);
-            PyErr_SetString(PyExc_ValueError, klu_error);
+            set_klu_error((int) Common.status);
         }
         return NULL;
     }
@@ -506,9 +512,7 @@ static PyObject* get_numeric(PyObject *self, PyObject *args, PyObject *kwrds)
     }
 
     if (status != 1){
-        snprintf(klu_error, 20, "%s %i", "KLU ERROR",
-                     (int) Common.status);
-        PyErr_SetString(PyExc_ValueError, klu_error);
+        set_klu_error((int) Common.status);
         return NULL;
     }
 
@@ -646,6 +650,7 @@ static PyObject* solve(PyObject *self, PyObject *args, PyObject *kwrds)
     KLUD(defaults)(&Common);
     KLUD(defaults)(&CommonFree);
 
+    Py_BEGIN_ALLOW_THREADS
     if (SP_ID(A) == DOUBLE) {
         if (trans == 'N')
             KLUD(solve)(PyCapsule_GetPointer(Fs, descrdFs),
@@ -667,6 +672,7 @@ static PyObject* solve(PyObject *self, PyObject *args, PyObject *kwrds)
                          , n, nrhs, (double *) MAT_BUFZ(B),  trans == 'C' ? 1 : 0,
                          &Common);
     }
+    Py_END_ALLOW_THREADS
 
 
     if (Common.status != KLU_OK) {
@@ -677,9 +683,7 @@ static PyObject* solve(PyObject *self, PyObject *args, PyObject *kwrds)
                 PyErr_SetString(PyExc_ArithmeticError,
                                 "singular matrix");
             else {
-                snprintf(klu_error, 20, "%s %i", "KLU ERROR",
-                         (int) Common.status);
-                PyErr_SetString(PyExc_ValueError, klu_error);
+                set_klu_error((int) Common.status);
             }
             return NULL;
         }
@@ -839,13 +843,16 @@ static PyMethodDef klu_functions[] = {
 };
 
 
+KVXOPT_MODULE_SLOTS(klu)
+
 static PyModuleDef klu_module = {
     PyModuleDef_HEAD_INIT,
     "klu",
     klu__doc__,
     -1,
     klu_functions,
-    NULL, NULL, NULL, NULL
+    KVXOPT_SLOTS(klu),
+    NULL, NULL, NULL
 };
 
 
@@ -853,6 +860,7 @@ PyMODINIT_FUNC PyInit_klu(void)
 {
     PyObject *m;
     if (!(m = PyModule_Create(&klu_module))) return NULL;
+    KVXOPT_SET_GIL_SLOT(m);
     if (import_kvxopt() < 0) return NULL;
     return m;
 }
