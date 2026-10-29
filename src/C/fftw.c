@@ -34,6 +34,26 @@ PyDoc_STRVAR(fftw__doc__, "Interface to the FFTW3 library.\n");
 extern void zscal_(int *n, complex_t *alpha, complex_t *x, int *incx);
 extern void dscal_(int *n, double *alpha, double *x, int *incx);
 
+/* FFTW planning is process-global. Serialize plan/execute/destroy so
+   free-threaded interpreters can call these wrappers concurrently.
+   The lock is taken with the GIL released: the owner may be inside
+   Py_BEGIN_ALLOW_THREADS and must be able to run in order to unlock. */
+static PyThread_type_lock kvxopt_fftw_lock_obj;
+
+static void kvxopt_fftw_lock(void)
+{
+    Py_BEGIN_ALLOW_THREADS
+    PyThread_acquire_lock(kvxopt_fftw_lock_obj, WAIT_LOCK);
+    Py_END_ALLOW_THREADS
+}
+
+static void kvxopt_fftw_unlock(void)
+{
+    Py_BEGIN_ALLOW_THREADS
+    PyThread_release_lock(kvxopt_fftw_lock_obj);
+    Py_END_ALLOW_THREADS
+}
+
 static char doc_dft[] =
     "DFT of a matrix,  X := dft(X)\n\n"
     "PURPOSE\n"
@@ -55,6 +75,7 @@ static PyObject *dft(PyObject *self, PyObject *args, PyObject *kwrds)
   int m = X->nrows, n = X->ncols;
   if (m == 0) return Py_BuildValue("");
 
+  kvxopt_fftw_lock();
   fftw_plan p = fftw_plan_many_dft(1, &m, n,
       X->buffer, &m, 1, m,
       X->buffer, &m, 1, m,
@@ -64,6 +85,7 @@ static PyObject *dft(PyObject *self, PyObject *args, PyObject *kwrds)
   fftw_execute(p);
   Py_END_ALLOW_THREADS
   fftw_destroy_plan(p);
+  kvxopt_fftw_unlock();
   return Py_BuildValue("");
 }
 
@@ -165,6 +187,7 @@ static PyObject *dftn(PyObject *self, PyObject *args, PyObject *kwrds)
     return Py_BuildValue("");
   }
 
+  kvxopt_fftw_lock();
   fftw_plan p = fftw_plan_dft(len, dimarr,
       X->buffer, X->buffer, FFTW_FORWARD, FFTW_ESTIMATE);
 
@@ -172,6 +195,7 @@ static PyObject *dftn(PyObject *self, PyObject *args, PyObject *kwrds)
   fftw_execute(p);
   Py_END_ALLOW_THREADS
   fftw_destroy_plan(p);
+  kvxopt_fftw_unlock();
   free(dimarr);
   return Py_BuildValue("");
 }
@@ -197,6 +221,7 @@ static PyObject *idft(PyObject *self, PyObject *args, PyObject *kwrds)
   int m = X->nrows, n = X->ncols;
   if (m == 0) return Py_BuildValue("");
 
+  kvxopt_fftw_lock();
   fftw_plan p = fftw_plan_many_dft(1, &m, n,
       X->buffer, &m, 1, m,
       X->buffer, &m, 1, m,
@@ -216,6 +241,7 @@ static PyObject *idft(PyObject *self, PyObject *args, PyObject *kwrds)
   zscal_(&mn, &a.z, MAT_BUFZ(X), &ix);
 
   fftw_destroy_plan(p);
+  kvxopt_fftw_unlock();
   return Py_BuildValue("");
 }
 
@@ -326,6 +352,7 @@ static PyObject *idftn(PyObject *self, PyObject *args, PyObject *kwrds)
   int ix = 1;
   zscal_(&proddim, &a.z, MAT_BUFZ(X), &ix);
 
+  kvxopt_fftw_lock();
   fftw_plan p = fftw_plan_dft(len, dimarr,
       X->buffer, X->buffer, FFTW_BACKWARD, FFTW_ESTIMATE);
 
@@ -333,6 +360,7 @@ static PyObject *idftn(PyObject *self, PyObject *args, PyObject *kwrds)
   fftw_execute(p);
   Py_END_ALLOW_THREADS
   fftw_destroy_plan(p);
+  kvxopt_fftw_unlock();
   free(dimarr);
   return Py_BuildValue("");
 }
@@ -373,6 +401,7 @@ static PyObject *dct(PyObject *self, PyObject *args, PyObject *kwrds)
   case 4: kind = FFTW_REDFT11; break;
   default: PY_ERR(PyExc_ValueError, "type must be between 1 and 4");
   }
+  kvxopt_fftw_lock();
   fftw_plan p = fftw_plan_many_r2r(1, &m, n,
       X->buffer, &m, 1, m,
       X->buffer, &m, 1, m,
@@ -382,6 +411,7 @@ static PyObject *dct(PyObject *self, PyObject *args, PyObject *kwrds)
   fftw_execute(p);
   Py_END_ALLOW_THREADS
   fftw_destroy_plan(p);
+  kvxopt_fftw_unlock();
   return Py_BuildValue("");
 }
 
@@ -551,6 +581,7 @@ static PyObject *dctn(PyObject *self, PyObject *args, PyObject *kwrds)
     Py_DECREF(seq);
   }
 
+  kvxopt_fftw_lock();
   fftw_plan p = fftw_plan_r2r(len, dimarr,
       X->buffer, X->buffer, kindarr, FFTW_ESTIMATE);
 
@@ -558,6 +589,7 @@ static PyObject *dctn(PyObject *self, PyObject *args, PyObject *kwrds)
   fftw_execute(p);
   Py_END_ALLOW_THREADS
   fftw_destroy_plan(p);
+  kvxopt_fftw_unlock();
   free(dimarr); free(kindarr);
   return Py_BuildValue("");
 }
@@ -598,6 +630,7 @@ static PyObject *idct(PyObject *self, PyObject *args, PyObject *kwrds)
       case 4: kind = FFTW_REDFT11; break;
       default: PY_ERR(PyExc_ValueError, "type must be between 1 and 4");
   }
+  kvxopt_fftw_lock();
   fftw_plan p = fftw_plan_many_r2r(1, &m, n, X->buffer, &m, 1, m,
       X->buffer, &m, 1, m, &kind, FFTW_ESTIMATE);
 
@@ -610,6 +643,7 @@ static PyObject *idct(PyObject *self, PyObject *args, PyObject *kwrds)
   dscal_(&mn, &a, MAT_BUFD(X), &ix);
 
   fftw_destroy_plan(p);
+  kvxopt_fftw_unlock();
   return Py_BuildValue("");
 }
 
@@ -784,6 +818,7 @@ static PyObject *idctn(PyObject *self, PyObject *args, PyObject *kwrds)
   int ix = 1;
   dscal_(&proddim, &a, MAT_BUFD(X), &ix);
 
+  kvxopt_fftw_lock();
   fftw_plan p = fftw_plan_r2r(len, dimarr,
       X->buffer, X->buffer, kindarr, FFTW_ESTIMATE);
 
@@ -791,6 +826,7 @@ static PyObject *idctn(PyObject *self, PyObject *args, PyObject *kwrds)
   fftw_execute(p);
   Py_END_ALLOW_THREADS
   fftw_destroy_plan(p);
+  kvxopt_fftw_unlock();
   free(dimarr); free(kindarr);
   return Py_BuildValue("");
 }
@@ -828,6 +864,7 @@ static PyObject *dst(PyObject *self, PyObject *args, PyObject *kwrds)
   case 4: kind = FFTW_RODFT11; break;
   default: PY_ERR(PyExc_ValueError, "type must be between 1 and 4");
   }
+  kvxopt_fftw_lock();
   fftw_plan p = fftw_plan_many_r2r(1, &m, n,
       X->buffer, &m, 1, m,
       X->buffer, &m, 1, m,
@@ -837,6 +874,7 @@ static PyObject *dst(PyObject *self, PyObject *args, PyObject *kwrds)
   fftw_execute(p);
   Py_END_ALLOW_THREADS
   fftw_destroy_plan(p);
+  kvxopt_fftw_unlock();
   return Py_BuildValue("");
 }
 
@@ -984,6 +1022,7 @@ static PyObject *dstn(PyObject *self, PyObject *args, PyObject *kwrds)
     }
   }
 
+  kvxopt_fftw_lock();
   fftw_plan p = fftw_plan_r2r(len, dimarr,
       X->buffer, X->buffer, kindarr, FFTW_ESTIMATE);
 
@@ -991,6 +1030,7 @@ static PyObject *dstn(PyObject *self, PyObject *args, PyObject *kwrds)
   fftw_execute(p);
   Py_END_ALLOW_THREADS
   fftw_destroy_plan(p);
+  kvxopt_fftw_unlock();
   free(dimarr); free(kindarr);
   return Py_BuildValue("");
 }
@@ -1028,6 +1068,7 @@ static PyObject *idst(PyObject *self, PyObject *args, PyObject *kwrds)
   case 4: kind = FFTW_RODFT11; break;
   default: PY_ERR(PyExc_ValueError, "type must be between 1 and 4");
   }
+  kvxopt_fftw_lock();
   fftw_plan p = fftw_plan_many_r2r(1, &m, n,
       X->buffer, &m, 1, m,
       X->buffer, &m, 1, m,
@@ -1042,6 +1083,7 @@ static PyObject *idst(PyObject *self, PyObject *args, PyObject *kwrds)
   dscal_(&mn, &a, MAT_BUFD(X), &ix);
 
   fftw_destroy_plan(p);
+  kvxopt_fftw_unlock();
   return Py_BuildValue("");
 }
 
@@ -1198,6 +1240,7 @@ static PyObject *idstn(PyObject *self, PyObject *args, PyObject *kwrds)
   int ix = 1;
   dscal_(&proddim, &a, MAT_BUFD(X), &ix);
 
+  kvxopt_fftw_lock();
   fftw_plan p = fftw_plan_r2r(len, dimarr,
       X->buffer, X->buffer, kindarr, FFTW_ESTIMATE);
 
@@ -1205,6 +1248,7 @@ static PyObject *idstn(PyObject *self, PyObject *args, PyObject *kwrds)
   fftw_execute(p);
   Py_END_ALLOW_THREADS
   fftw_destroy_plan(p);
+  kvxopt_fftw_unlock();
   free(dimarr); free(kindarr);
   return Py_BuildValue("");
 }
@@ -1245,6 +1289,10 @@ PyMODINIT_FUNC PyInit_fftw(void)
   PyObject *m;
   if (!(m = PyModule_Create(&fftw_module))) return NULL;
   KVXOPT_SET_GIL_SLOT(m);
+  if (!(kvxopt_fftw_lock_obj = PyThread_allocate_lock())) {
+    Py_DECREF(m);
+    return PyErr_NoMemory();
+  }
   if (import_kvxopt() < 0) return NULL;
   return m;
 }

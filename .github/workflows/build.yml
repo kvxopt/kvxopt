@@ -8,6 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     env:
         KVXOPT_BUILD_GSL: 1
         KVXOPT_BUILD_FFTW: 1
@@ -18,12 +19,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.11', '3.12', '3.13', '3.14', '3.14t', '3.15']
+        python-version: ['3.11', '3.12', '3.13', '3.14', '3.14t', '3.15', '3.15t']
         suite-sparse: [lib_suitesparse, src_suitesparse]
         include:
           - python-version: '3.14t'
             allow-prerelease: true
           - python-version: '3.15'
+            allow-prerelease: true
+          - python-version: '3.15t'
             allow-prerelease: true
 
 
@@ -92,6 +95,11 @@ jobs:
           python tools/typecheck.py
 
       - name: Test
+        env:
+          # Free-threaded jobs must stay on the nogil interpreter. An extension
+          # that omits Py_MOD_GIL_NOT_USED then fails the import instead of
+          # silently turning the GIL back on.
+          PYTHON_GIL: ${{ endsWith(matrix.python-version, 't') && '0' || '1' }}
         run: |
           echo ${KVXOPT_SUITESPARSE_SRC_DIR}
           python -c 'from kvxopt import blas,dsdp,lapack,glpk,osqp,fftw,gsl,cholmod,umfpack,klu'

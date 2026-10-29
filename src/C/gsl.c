@@ -46,8 +46,9 @@ static KVXOPT_THREAD_LOCAL gsl_rng *rng = NULL;
     if (!(obj = Matrix_New(nrows, ncols, DOUBLE)))                             \
       return NULL;                                                             \
                                                                                \
-    gsl_rng_env_setup();                                                       \
-    rng_type = gsl_rng_default;                                                \
+    /* rng type is fixed in module init; seed and rng stay thread-local. */   \
+    if (rng_type == NULL)                                                      \
+        rng_type = gsl_rng_default;                                            \
     rng = gsl_rng_alloc(rng_type);                                             \
     gsl_rng_set(rng, seed);                                                    \
 }
@@ -230,6 +231,8 @@ PyMODINIT_FUNC PyInit_gsl(void)
   PyObject *m;
   if (!(m = PyModule_Create(&gsl_module))) return NULL;
   KVXOPT_SET_GIL_SLOT(m);
+  /* One-time setup: gsl_rng_env_setup writes process-global RNG state. */
+  gsl_rng_env_setup();
   if (import_kvxopt() < 0) return NULL;
   return m;
 }

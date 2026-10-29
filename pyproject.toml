@@ -34,6 +34,9 @@ write_to = "src/python/_version.py"
 local_scheme = "no-local-version"
 
 [tool.cibuildwheel]
+# GIL-enabled cp311–cp315 together with free-threaded cp314t and cp315t.
+# cibuildwheel 4 builds 3.14+ free-threaded interpreters without an enable
+# flag and no longer ships experimental cp313t.
 build = "cp311-* cp312-* cp313-* cp314-* cp314t-* cp315-* cp315t-*"
 skip = ["cp*-win32", "cp*-manylinux_i686"]
 test-requires = ["numpy", "pytest"]
