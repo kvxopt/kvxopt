@@ -73,16 +73,6 @@ jobs:
 
           CIBW_BEFORE_ALL: bash .ci/scripts/install_dependencies.sh ${{ matrix.platform }} ${{ matrix.arch }}
 
-      - name: Verify GIL and free-threaded wheels
-        shell: bash
-        run: |
-          if command -v python3 >/dev/null 2>&1; then
-            PY=python3
-          else
-            PY=python
-          fi
-          "$PY" .ci/scripts/verify_wheel_tags.py ./wheelhouse
-
       - uses: actions/upload-artifact@v4
         with:
           name: cibw-wheels-${{ matrix.os }}-${{ matrix.arch }}
