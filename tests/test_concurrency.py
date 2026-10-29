@@ -570,8 +570,19 @@ class TestConcurrency(unittest.TestCase):
         mat.size = (4, 1)
         self.assertEqual(mat.size, (4, 1))
 
+    def _assert_blas_env(self, n: int) -> int | None:
+        for key in _BLAS_ENV:
+            self.assertEqual(os.environ[key], str(n))
+        return kvxopt.get_blas_num_threads()
+
     def test_blas_thread_controls(self):
-        """BLAS thread controls set, nest, and restore the runtime and environment."""
+        """BLAS thread controls set, nest, and restore the runtime and environment.
+
+        Environment variables always follow the request. A BLAS library may
+        clamp the in-process count to the CPUs it was built for, so the
+        runtime value is checked only when two requests produce different
+        counts.
+        """
         for key in _BLAS_ENV:
             os.environ.pop(key, None)
 
@@ -583,28 +594,32 @@ class TestConcurrency(unittest.TestCase):
             self.assertNotIn(key, os.environ)
 
         with kvxopt.blas_threads(4):
-            for key in _BLAS_ENV:
-                self.assertEqual(os.environ[key], "4")
-            outer = kvxopt.get_blas_num_threads()
-            if outer is not None:
-                self.assertEqual(outer, 4)
+            seen_four = self._assert_blas_env(4)
             with kvxopt.blas_threads(1):
-                for key in _BLAS_ENV:
-                    self.assertEqual(os.environ[key], "1")
-                inner = kvxopt.get_blas_num_threads()
-                if inner is not None:
-                    self.assertEqual(inner, 1)
-            for key in _BLAS_ENV:
-                self.assertEqual(os.environ[key], "4")
+                seen_one = self._assert_blas_env(1)
+            seen_four_again = self._assert_blas_env(4)
         for key in _BLAS_ENV:
             self.assertNotIn(key, os.environ)
 
+        if (
+            None not in (seen_four, seen_one, seen_four_again)
+            and seen_four != seen_one
+        ):
+            self.assertEqual(seen_four, seen_four_again)
+            self.assertEqual(seen_one, 1)
+            self.assertGreater(seen_four, seen_one)
+            self.assertLessEqual(seen_four, 4)
+
         kvxopt.set_blas_num_threads(2)
-        for key in _BLAS_ENV:
-            self.assertEqual(os.environ[key], "2")
-        observed = kvxopt.get_blas_num_threads()
-        if observed is not None:
-            self.assertEqual(observed, 2)
+        seen_two = self._assert_blas_env(2)
+        if (
+            seen_two is not None
+            and seen_four is not None
+            and seen_one is not None
+            and seen_four != seen_one
+        ):
+            self.assertGreaterEqual(seen_two, 1)
+            self.assertLessEqual(seen_two, 2)
 
         with self.assertRaises(ValueError):
             with kvxopt.blas_threads(0):
@@ -612,9 +627,7 @@ class TestConcurrency(unittest.TestCase):
         # A rejected change leaves the previous thread count in place.
         for key in _BLAS_ENV:
             self.assertEqual(os.environ[key], "2")
-        observed = kvxopt.get_blas_num_threads()
-        if observed is not None:
-            self.assertEqual(observed, 2)
+        self.assertEqual(kvxopt.get_blas_num_threads(), seen_two)
 
 
 if __name__ == "__main__":
